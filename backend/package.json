@@ -1,0 +1,26 @@
+{
+  "name": "interview-ai-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup src/index.ts --format esm --outDir dist --dts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@deepgram/sdk": "^3.9.0",
+    "@hono/node-server": "^1.13.7",
+    "dotenv": "^16.4.7",
+    "groq-sdk": "^0.26.0",
+    "hono": "^4.6.19",
+    "pdf-parse": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "@types/pdf-parse": "^1.1.4",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

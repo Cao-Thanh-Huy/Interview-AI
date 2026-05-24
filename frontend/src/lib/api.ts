@@ -1,0 +1,61 @@
+import type { CompletionMode } from './types'
+
+const BASE = '/api'
+
+export async function fetchDeepgramKey(): Promise<{ key: string }> {
+  const res = await fetch(`${BASE}/deepgram`)
+  if (!res.ok) throw new Error('Failed to fetch Deepgram key')
+  return res.json()
+}
+
+export async function streamCompletion(
+  transcript: string,
+  context: string,
+  mode: CompletionMode,
+  onChunk: (chunk: string) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch(`${BASE}/completion`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transcript, context, mode }),
+    signal,
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+    throw new Error(err.error ?? `HTTP ${res.status}`)
+  }
+
+  const reader = res.body?.getReader()
+  if (!reader) throw new Error('No response body')
+
+  const decoder = new TextDecoder()
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    onChunk(decoder.decode(value, { stream: true }))
+  }
+}
+
+export async function uploadPDF(file: File): Promise<{ filename: string; chunks: number }> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await fetch(`${BASE}/pdf`, { method: 'POST', body: formData })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Upload failed' }))
+    throw new Error(err.error ?? 'Upload failed')
+  }
+  return res.json()
+}
+
+export async function deletePDF(filename: string): Promise<void> {
+  const res = await fetch(`${BASE}/pdf/${encodeURIComponent(filename)}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Delete failed')
+}
+
+export async function listPDFs(): Promise<{ documents: string[] }> {
+  const res = await fetch(`${BASE}/pdf`)
+  if (!res.ok) throw new Error('List failed')
+  return res.json()
+}
