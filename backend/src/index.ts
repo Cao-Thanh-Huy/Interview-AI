@@ -11,10 +11,17 @@ const app = new Hono()
 
 app.use('*', logger())
 
+const corsOrigins = ['http://localhost:5173', 'http://localhost:4173']
+if (process.env.SHARE_HOST) {
+  // Support both http and https (https used when --share enables SSL)
+  corsOrigins.push(`http://${process.env.SHARE_HOST}:5173`)
+  corsOrigins.push(`https://${process.env.SHARE_HOST}:5173`)
+}
+
 app.use(
   '/api/*',
   cors({
-    origin: ['http://localhost:5173', 'http://localhost:4173'],
+    origin: corsOrigins,
     allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type'],
   }),
