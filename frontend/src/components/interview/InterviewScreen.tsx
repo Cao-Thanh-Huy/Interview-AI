@@ -4,25 +4,39 @@ import { useInterviewStore } from '@/store/useInterviewStore'
 import { streamCompletion, listPDFs } from '@/lib/api'
 import { TopBar } from './TopBar'
 import { ConversationFeed } from './ConversationFeed'
+import { MiniPlayer } from './MiniPlayer'
 
 export function InterviewScreen() {
-  const {
-    context,
-    uploadedPDFs,
-    addTurn,
-    appendToTurn,
-    finalizeTurn,
-    setCurrentInterimCaption,
-    setIsRecording,
-    setPhase,
-    stealthMode,
-    toggleStealth,
-  } = useInterviewStore()
+  const context = useInterviewStore((s) => s.context)
+  const uploadedPDFs = useInterviewStore((s) => s.uploadedPDFs)
+  const addTurn = useInterviewStore((s) => s.addTurn)
+  const appendToTurn = useInterviewStore((s) => s.appendToTurn)
+  const finalizeTurn = useInterviewStore((s) => s.finalizeTurn)
+  const setCurrentInterimCaption = useInterviewStore((s) => s.setCurrentInterimCaption)
+  const setIsRecording = useInterviewStore((s) => s.setIsRecording)
+  const setPhase = useInterviewStore((s) => s.setPhase)
+  const stealthMode = useInterviewStore((s) => s.stealthMode)
+  const toggleStealth = useInterviewStore((s) => s.toggleStealth)
 
+  const [isMiniPlayerOpen, setIsMiniPlayerOpen] = useState(false)
+  const [isTabVisible, setIsTabVisible] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [warningMessage, setWarningMessage] = useState<string | null>(null)
   const [cvWarning, setCvWarning] = useState(false)
   const startTimeRef = useRef(Date.now())
   const abortRef = useRef<AbortController | null>(null)
+  const autoOpenedMiniRef = useRef(false)
+  const wasConnectedRef = useRef(false)
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      setIsTabVisible(document.visibilityState === 'visible')
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [])
 
   const handleUtteranceEnd = useCallback(
     async (fullTranscript: string) => {
@@ -57,12 +71,8 @@ export function InterviewScreen() {
   )
 
   const handleTranscript = useCallback(
-    (text: string, isFinal: boolean) => {
-      if (!isFinal) {
-        setCurrentInterimCaption(text)
-      } else {
-        setCurrentInterimCaption('')
-      }
+    (text: string) => {
+      setCurrentInterimCaption(text)
     },
     [setCurrentInterimCaption],
   )
@@ -73,13 +83,32 @@ export function InterviewScreen() {
   )
 
   const handleError = useCallback((msg: string) => setErrorMessage(msg), [])
+  const handleWarning = useCallback((msg: string) => setWarningMessage(msg), [])
 
-  const { start, stop, status, audioSource } = useDeepgram({
+  const { start, stop, status, audioSource, isMuted, toggleMute } = useDeepgram({
     onTranscript: handleTranscript,
     onUtteranceEnd: handleUtteranceEnd,
     onStatusChange: handleStatusChange,
     onError: handleError,
+    onWarning: handleWarning,
   })
+
+  // Auto-open mini player once connected
+  useEffect(() => {
+    if (status === 'connected') {
+      wasConnectedRef.current = true
+      if (!autoOpenedMiniRef.current) {
+        autoOpenedMiniRef.current = true
+        setIsMiniPlayerOpen(true)
+      }
+    }
+    // Connection dropped after being connected → go back to setup
+    if (status === 'idle' && wasConnectedRef.current) {
+      wasConnectedRef.current = false
+      abortRef.current?.abort()
+      setPhase('setup')
+    }
+  }, [status, setPhase])
 
   // Auto-start on mount + CV check
   useEffect(() => {
@@ -99,10 +128,26 @@ export function InterviewScreen() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleStop = useCallback(() => {
+    wasConnectedRef.current = false
     abortRef.current?.abort()
     stop()
     setPhase('setup')
   }, [stop, setPhase])
+
+  // When mini player is open, blank the main page — all UI lives in the mini player
+  if (isMiniPlayerOpen) {
+    return (
+      <MiniPlayer
+        onClose={() => setIsMiniPlayerOpen(false)}
+        isRecording={status === 'connected'}
+        audioSource={audioSource}
+        isMuted={isMuted}
+        onToggleMute={toggleMute}
+        onStop={handleStop}
+        onManualSubmit={handleUtteranceEnd}
+      />
+    )
+  }
 
   // Stealth mode — show only a tiny floating dot
   if (stealthMode) {
@@ -120,16 +165,20 @@ export function InterviewScreen() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-[#0a0a0f] overflow-hidden relative">
-      {/* Ambient glows */}
-      <div
-        aria-hidden
-        className="absolute top-0 right-0 w-[350px] h-[350px] bg-violet-600/5 rounded-full blur-[100px] pointer-events-none"
-      />
-      <div
-        aria-hidden
-        className="absolute bottom-0 left-0 w-[250px] h-[250px] bg-cyan-500/5 rounded-full blur-[80px] pointer-events-none"
-      />
+    <div className="h-screen flex flex-col bg-[#f6f8fb] overflow-hidden relative">
+      {/* Ambient glows - paused when tab is hidden to release GPU blur operations */}
+      {isTabVisible && (
+        <>
+          <div
+            aria-hidden
+            className="absolute top-0 right-0 w-[350px] h-[350px] bg-indigo-500/5 rounded-full blur-[100px] pointer-events-none"
+          />
+          <div
+            aria-hidden
+            className="absolute bottom-0 left-0 w-[250px] h-[250px] bg-sky-400/5 rounded-full blur-[80px] pointer-events-none"
+          />
+        </>
+      )}
 
       <TopBar
         status={status}
@@ -137,6 +186,12 @@ export function InterviewScreen() {
         startTime={startTimeRef.current}
         onStop={handleStop}
         errorMessage={errorMessage}
+        warningMessage={warningMessage}
+        onDismissWarning={() => setWarningMessage(null)}
+        isMuted={isMuted}
+        onToggleMute={toggleMute}
+        isMiniPlayerOpen={isMiniPlayerOpen}
+        onToggleMiniPlayer={() => setIsMiniPlayerOpen(!isMiniPlayerOpen)}
       />
 
       {cvWarning && (
@@ -156,6 +211,16 @@ export function InterviewScreen() {
       <div className="flex-1 p-3 overflow-hidden relative z-10">
         <ConversationFeed />
       </div>
+
+      {isMiniPlayerOpen && (
+        <MiniPlayer
+          onClose={() => setIsMiniPlayerOpen(false)}
+          isRecording={status === 'connected'}
+          audioSource={audioSource}
+          isMuted={isMuted}
+          onToggleMute={toggleMute}
+        />
+      )}
     </div>
   )
 }

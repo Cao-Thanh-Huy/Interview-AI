@@ -16,15 +16,15 @@ export function SetupScreen() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-[#0a0a0f]">
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-[#f6f8fb]">
       {/* Background glows */}
       <div
         aria-hidden
-        className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] bg-violet-700/10 rounded-full blur-[120px] pointer-events-none"
+        className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] bg-indigo-500/5 rounded-full blur-[120px] pointer-events-none"
       />
       <div
         aria-hidden
-        className="absolute bottom-[-10%] left-[-5%] w-[400px] h-[400px] bg-cyan-500/8 rounded-full blur-[100px] pointer-events-none"
+        className="absolute bottom-[-10%] left-[-5%] w-[400px] h-[400px] bg-sky-400/5 rounded-full blur-[100px] pointer-events-none"
       />
 
       <motion.div
@@ -35,18 +35,18 @@ export function SetupScreen() {
       >
         {/* Hero */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-600 to-cyan-500 shadow-xl shadow-violet-500/20 mb-5">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-600 to-cyan-500 shadow-xl shadow-indigo-500/20 mb-5 animate-pulse">
             <Zap className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">Interview Copilot</h1>
-          <p className="text-white/40 text-sm">Real-time AI assistance during your live interview</p>
+          <h1 className="text-3xl font-bold text-slate-800 mb-2 tracking-tight">Interview Copilot</h1>
+          <p className="text-slate-500 text-sm font-medium">Real-time AI assistance during your live interview</p>
         </div>
 
         {/* Card */}
-        <div className="glass rounded-2xl p-6 shadow-2xl shadow-black/60 space-y-6">
+        <div className="glass rounded-2xl p-6 shadow-2xl shadow-slate-200/50 space-y-6 bg-white/70">
           {/* Context */}
           <div className="space-y-2">
-            <label htmlFor="context" className="block text-sm font-medium text-white/70">
+            <label htmlFor="context" className="block text-sm font-medium text-slate-700">
               💼 Interview Context
             </label>
             <textarea
@@ -55,28 +55,28 @@ export function SetupScreen() {
               onChange={(e) => setContext(e.target.value)}
               placeholder="e.g., Senior React Developer at Acme Corp. Keep answers concise, use STAR method, 3-4 bullet points max."
               rows={3}
-              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm placeholder:text-white/20 resize-none outline-none focus:border-violet-500/60 focus:bg-white/[0.06] transition-all duration-200"
+              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-slate-800 text-sm placeholder:text-slate-400 resize-none outline-none focus:border-indigo-500/60 focus:bg-white transition-all duration-200 shadow-sm"
             />
-            <p className="text-xs text-white/25">AI uses this to tailor every suggestion</p>
+            <p className="text-[10px] text-slate-400 font-semibold tracking-wide">AI uses this to tailor every suggestion</p>
           </div>
 
           {/* CV Upload */}
           <CVUpload />
 
           {/* Divider */}
-          <div className="border-t border-white/5" />
+          <div className="border-t border-slate-200/50" />
 
           {/* Start */}
           <button
             onClick={handleStart}
             disabled={isStarting}
             className={cn(
-              'w-full py-3.5 rounded-xl font-semibold text-white text-sm',
-              'bg-gradient-to-r from-violet-600 to-cyan-500',
-              'hover:from-violet-500 hover:to-cyan-400',
+              'w-full py-3.5 rounded-xl font-semibold text-white text-sm cursor-pointer',
+              'bg-gradient-to-r from-indigo-600 to-cyan-500',
+              'hover:from-indigo-500 hover:to-cyan-400',
               'transition-all duration-200',
               'flex items-center justify-center gap-2',
-              'shadow-lg shadow-violet-600/25',
+              'shadow-lg shadow-indigo-600/20',
               'disabled:opacity-60 disabled:cursor-not-allowed',
             )}
           >
@@ -95,9 +95,9 @@ export function SetupScreen() {
         </div>
 
         {/* Hint */}
-        <p className="text-center text-xs text-white/20 mt-5">
+        <p className="text-center text-xs text-slate-400 mt-5 font-medium">
           Press{' '}
-          <kbd className="bg-white/10 px-1.5 py-0.5 rounded text-white/35 font-mono">
+          <kbd className="bg-slate-200/60 px-1.5 py-0.5 rounded text-slate-600 font-mono text-[11px] border border-slate-300/30">
             Ctrl+Shift+H
           </kbd>{' '}
           during interview to toggle stealth mode

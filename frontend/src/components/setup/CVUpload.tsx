@@ -61,8 +61,8 @@ export function CVUpload() {
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <label className="text-sm font-medium text-white/80">📄 CV / Resume</label>
-        <span className="text-xs text-white/30">Optional — for personalized answers</span>
+        <label className="text-sm font-medium text-slate-700">📄 CV / Resume</label>
+        <span className="text-xs text-slate-400 font-medium">Optional — for personalized answers</span>
       </div>
 
       <AnimatePresence mode="wait">
@@ -75,8 +75,8 @@ export function CVUpload() {
             className={cn(
               'block cursor-pointer rounded-xl border-2 border-dashed p-5 text-center transition-all duration-200',
               isDragging
-                ? 'border-violet-500/60 bg-violet-500/5'
-                : 'border-white/10 hover:border-white/20 hover:bg-white/[0.02]',
+                ? 'border-indigo-500 bg-indigo-50/50'
+                : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50',
               uploading && 'pointer-events-none opacity-50',
             )}
             onDragOver={(e) => {
@@ -88,12 +88,12 @@ export function CVUpload() {
           >
             <input type="file" accept=".pdf" onChange={handleFileInput} className="hidden" />
             <Upload
-              className={cn('w-6 h-6 mx-auto mb-2 transition-colors', isDragging ? 'text-violet-400' : 'text-white/20')}
+              className={cn('w-6 h-6 mx-auto mb-2 transition-colors', isDragging ? 'text-indigo-500' : 'text-slate-300')}
             />
-            <p className="text-sm text-white/40">
+            <p className="text-sm text-slate-400 font-medium">
               {uploading ? (
                 <span className="flex items-center justify-center gap-2">
-                  <span className="w-3.5 h-3.5 border-2 border-violet-400 border-t-transparent rounded-full animate-spin inline-block" />
+                  <span className="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin inline-block" />
                   Uploading...
                 </span>
               ) : (
@@ -112,23 +112,23 @@ export function CVUpload() {
             {uploadedPDFs.map((filename) => (
               <div
                 key={filename}
-                className="flex items-center justify-between bg-white/5 rounded-xl px-3 py-2.5 border border-white/5"
+                className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2 border border-slate-200/50"
               >
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="shrink-0 w-8 h-8 rounded-lg bg-violet-500/15 flex items-center justify-center">
-                    <FileText className="w-4 h-4 text-violet-400" />
+                  <div className="shrink-0 w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center border border-indigo-100/50">
+                    <FileText className="w-4 h-4 text-indigo-500" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-xs text-white/80 font-medium truncate">{filename}</p>
+                    <p className="text-xs text-slate-700 font-semibold truncate">{filename}</p>
                     <div className="flex items-center gap-1 mt-0.5">
-                      <CheckCircle className="w-3 h-3 text-emerald-400 shrink-0" />
-                      <p className="text-xs text-emerald-400">Ready for RAG</p>
+                      <CheckCircle className="w-3 h-3 text-emerald-500 shrink-0" />
+                      <p className="text-[10px] text-emerald-600 font-semibold uppercase tracking-wider">Ready for RAG</p>
                     </div>
                   </div>
                 </div>
                 <button
                   onClick={() => handleDelete(filename)}
-                  className="shrink-0 w-6 h-6 rounded-lg flex items-center justify-center text-white/25 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                  className="shrink-0 w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -136,7 +136,7 @@ export function CVUpload() {
             ))}
 
             {uploadedPDFs.length < 3 && (
-              <label className="flex items-center gap-1.5 cursor-pointer text-xs text-violet-400/70 hover:text-violet-400 transition-colors px-1 py-1">
+              <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-indigo-600 hover:text-indigo-700 transition-colors px-1 py-1">
                 <input type="file" accept=".pdf" onChange={handleFileInput} className="hidden" />
                 <Upload className="w-3 h-3" />
                 Add another PDF
@@ -148,8 +148,8 @@ export function CVUpload() {
 
       {error && (
         <div className="flex items-center gap-1.5">
-          <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-          <p className="text-xs text-red-400">{error}</p>
+          <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
+          <p className="text-xs text-red-500 font-medium">{error}</p>
         </div>
       )}
     </div>

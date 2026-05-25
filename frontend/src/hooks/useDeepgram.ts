@@ -7,6 +7,7 @@ interface UseDeepgramOptions {
   onUtteranceEnd: (fullTranscript: string) => void
   onStatusChange?: (status: DeepgramStatus) => void
   onError?: (message: string) => void
+  onWarning?: (message: string) => void
 }
 
 export function useDeepgram({
@@ -14,10 +15,12 @@ export function useDeepgram({
   onUtteranceEnd,
   onStatusChange,
   onError,
+  onWarning,
 }: UseDeepgramOptions) {
   const [status, setStatus] = useState<DeepgramStatus>('idle')
   const [audioSource, setAudioSource] = useState<AudioSource>(null)
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null)
+  const [isMuted, setIsMuted] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
@@ -26,6 +29,8 @@ export function useDeepgram({
   const audioQueueRef = useRef<Blob[]>([])
   const isProcessingRef = useRef(false)
   const pendingTranscriptRef = useRef('')
+  const isMutedRef = useRef(false)
+  const keepAliveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const updateStatus = useCallback(
     (s: DeepgramStatus) => {
@@ -103,7 +108,7 @@ export function useDeepgram({
         recorderRef.current = recorder
 
         recorder.ondataavailable = (e) => {
-          if (e.data.size > 0) {
+          if (e.data.size > 0 && !isMutedRef.current) {
             audioQueueRef.current.push(e.data)
             flushAudioQueue()
           }
@@ -122,10 +127,15 @@ export function useDeepgram({
             const text = words.map((w) => w.punctuated_word ?? w.word).join(' ')
 
             if (text.trim()) {
-              onTranscript(text, data.is_final as boolean)
               if (data.is_final) {
                 pendingTranscriptRef.current +=
                   (pendingTranscriptRef.current ? ' ' : '') + text
+                onTranscript(pendingTranscriptRef.current, true)
+              } else {
+                const fullText = pendingTranscriptRef.current
+                  ? pendingTranscriptRef.current + ' ' + text
+                  : text
+                onTranscript(fullText, false)
               }
             }
           } else if (data.type === 'UtteranceEnd') {
@@ -133,6 +143,7 @@ export function useDeepgram({
             if (accumulated) {
               onUtteranceEnd(accumulated)
               pendingTranscriptRef.current = ''
+              onTranscript('', true)
             }
           }
         } catch (err) {
@@ -188,6 +199,11 @@ export function useDeepgram({
         audioStream?.getTracks().forEach((t) => t.stop())
         audioStream = new MediaStream(systemAudioTracks)
         setAudioSource('system')
+      } else {
+        // Screen shared but no audio — warn the user
+        onWarning?.(
+          '⚠️ Screen shared but no audio detected. In your share dialog, enable "Share system audio" / "Share tab audio" to capture interviewer voice.',
+        )
       }
 
       displayMedia.getVideoTracks()[0]?.addEventListener('ended', () => stop())
@@ -212,7 +228,34 @@ export function useDeepgram({
     await openWebSocket(audioStream)
   }, [openWebSocket, onError, updateStatus]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const toggleMute = useCallback(() => {
+    const next = !isMutedRef.current
+    isMutedRef.current = next
+    setIsMuted(next)
+    if (next) {
+      // Muted: send KeepAlive every 8s so Deepgram doesn't timeout with code 1011
+      keepAliveIntervalRef.current = setInterval(() => {
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: 'KeepAlive' }))
+        }
+      }, 8000)
+    } else {
+      // Unmuted: stop keep-alive, discard blobs recorded while muted
+      if (keepAliveIntervalRef.current) {
+        clearInterval(keepAliveIntervalRef.current)
+        keepAliveIntervalRef.current = null
+      }
+      audioQueueRef.current = []
+    }
+  }, [])
+
   const stop = useCallback(() => {
+    if (keepAliveIntervalRef.current) {
+      clearInterval(keepAliveIntervalRef.current)
+      keepAliveIntervalRef.current = null
+    }
+    isMutedRef.current = false
+
     recorderRef.current?.stop()
     recorderRef.current = null
 
@@ -236,5 +279,5 @@ export function useDeepgram({
 
   useEffect(() => () => stop(), [stop])
 
-  return { start, stop, status, audioSource, screenStream }
+  return { start, stop, status, audioSource, screenStream, isMuted, toggleMute }
 }
