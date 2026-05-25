@@ -14,6 +14,10 @@ interface InterviewStore {
   addPDF: (filename: string) => void
   removePDF: (filename: string) => void
 
+  // Session
+  sessionId: string
+  initSession: () => void
+
   // Conversation turns (question + AI answer pairs)
   turns: Turn[]
   currentInterimCaption: string
@@ -23,7 +27,7 @@ interface InterviewStore {
   setCurrentInterimCaption: (text: string) => void
   clearTurns: () => void
 
-  // Session
+  // Recording
   isRecording: boolean
   setIsRecording: (v: boolean) => void
 
@@ -46,6 +50,9 @@ export const useInterviewStore = create<InterviewStore>()(
         set((s) => ({ uploadedPDFs: [...s.uploadedPDFs, filename] })),
       removePDF: (filename) =>
         set((s) => ({ uploadedPDFs: s.uploadedPDFs.filter((f) => f !== filename) })),
+
+      sessionId: '',
+      initSession: () => set({ sessionId: Date.now().toString(), turns: [], currentInterimCaption: '' }),
 
       turns: [],
       currentInterimCaption: '',

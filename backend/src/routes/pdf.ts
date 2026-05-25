@@ -1,14 +1,20 @@
 import { Hono } from 'hono'
 import { safePdfParse } from '../lib/pdfParser.js'
 import { pdfStore } from '../lib/pdfStore.js'
+import { upsertCVChunk, isPineconeEnabled } from '../lib/pinecone.js'
 
 export const pdfRouter = new Hono()
 
-function splitIntoChunks(text: string, wordsPerChunk = 300): string[] {
+/**
+ * Sliding window chunking: overlapping windows of text for better RAG coverage.
+ */
+function slidingWindowChunks(text: string, wordsPerChunk = 250, overlapWords = 50): string[] {
   const words = text.split(/\s+/).filter(Boolean)
   const chunks: string[] = []
-  for (let i = 0; i < words.length; i += wordsPerChunk) {
+  const step = wordsPerChunk - overlapWords
+  for (let i = 0; i < words.length; i += step) {
     chunks.push(words.slice(i, i + wordsPerChunk).join(' '))
+    if (i + wordsPerChunk >= words.length) break
   }
   return chunks
 }
@@ -35,8 +41,19 @@ pdfRouter.post('/', async (c) => {
       return c.json({ error: 'Could not extract text from PDF' }, 422)
     }
 
-    const chunks = splitIntoChunks(fullText)
+    const chunks = slidingWindowChunks(fullText)
     pdfStore.store(file.name, chunks, fullText)
+
+    // Also upsert CV chunks into Pinecone for semantic RAG (fire-and-forget, non-blocking)
+    if (isPineconeEnabled()) {
+      Promise.all(
+        chunks.map((chunk, i) =>
+          upsertCVChunk(`cv-${file.name}-chunk${i}`, chunk, file.name).catch((err) =>
+            console.error(`Pinecone CV chunk upsert failed (chunk ${i}):`, err),
+          ),
+        ),
+      ).catch(() => {})
+    }
 
     return c.json({ filename: file.name, size: file.size, chunks: chunks.length })
   } catch (err) {

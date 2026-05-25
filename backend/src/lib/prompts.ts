@@ -1,22 +1,57 @@
-export function buildPrompt(context: string, transcript: string): string {
-  return `You are an interview assistant AI helping a job candidate in a live interview.
-${context ? `Interview context: ${context}\n` : ''}
-The INTERVIEWER just said:
-"${transcript}"
+const LIVE_RULES = `RULES (STRICT):
+- Output ONLY 3-5 bullet points (• prefix). No intro sentence. No outro.
+- Each bullet: MAX 15 words.
+- Use STAR keywords: Situation/Task/Action/Result.
+- Prefer concrete keywords and numbers over vague phrases.
+- If a simple factual question: ONE bullet only (name, date, location, etc.).
+- No prose, no paragraphs, no filler words.`
 
-Answer the specific question directly and concisely. For factual or simple questions (e.g. name, location, availability), give one short sentence. For behavioral or experience questions, use 2-3 focused bullet points. Do not pad with generic advice. English only.`
+export interface HistoryTurn {
+  question: string
+  answer: string
 }
 
-export function buildRAGPrompt(context: string, transcript: string, cvContext: string): string {
-  return `You are an interview assistant AI helping a job candidate in a live interview.
-${context ? `Interview context: ${context}\n` : ''}
-Candidate's CV/Resume:
-${cvContext}
+export function buildPrompt(context: string, transcript: string, history: HistoryTurn[] = []): string {
+  const historyBlock = history.length > 0
+    ? `Recent conversation:\n${history.map((t) => `Q: ${t.question}\nA: ${t.answer}`).join('\n\n')}\n\n`
+    : ''
+  return `You are a live interview copilot giving a candidate real-time bullet-point suggestions.
+${context ? `Session context: ${context}\n` : ''}${historyBlock}${LIVE_RULES}
 
-The INTERVIEWER just asked:
-"${transcript}"
+Interviewer just asked: "${transcript}"
 
-Answer the specific question directly using only the most relevant CV details. For factual questions, one short sentence. For experience/behavioral questions, 2-3 bullet points with specific CV details. Do not list unrelated experience. English only.`
+Suggestions:`
+}
+
+export function buildRAGPrompt(
+  context: string,
+  transcript: string,
+  ragContext: string,
+  history: HistoryTurn[] = [],
+): string {
+  const historyBlock = history.length > 0
+    ? `Recent conversation:\n${history.map((t) => `Q: ${t.question}\nA: ${t.answer}`).join('\n\n')}\n\n`
+    : ''
+  return `You are a live interview copilot giving a candidate real-time bullet-point suggestions.
+${context ? `Session context: ${context}\n` : ''}${historyBlock}Knowledge base (CV + trained QA):
+${ragContext}
+
+${LIVE_RULES}
+
+Interviewer just asked: "${transcript}"
+
+Suggestions:`
+}
+
+export function buildTrainingSuggestionPrompt(context: string, question: string, ragContext = ''): string {
+  const knowledgeBlock = ragContext
+    ? `\nRelevant knowledge from your profile:\n${ragContext}\n\nUse the above as the foundation for your answer. Personalize and expand as needed.\n`
+    : ''
+  return `You are a professional interview coach. Draft a strong, concise answer for the following interview question.
+${context ? `Role/Context: ${context}\n` : ''}${knowledgeBlock}
+Question: "${question}"
+
+Write a structured answer using the STAR method. Use 4-5 bullet points. Each bullet ≤ 20 words. Be specific and impactful.`
 }
 
 export function buildSummarizerPrompt(transcript: string): string {

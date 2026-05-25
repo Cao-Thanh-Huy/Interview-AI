@@ -1,4 +1,4 @@
-import type { CompletionMode } from './types'
+import type { CompletionMode, HistoryTurn, SessionMetadata, SessionDetail, UpsertQAResult } from './types'
 
 const BASE = '/api'
 
@@ -14,11 +14,13 @@ export async function streamCompletion(
   mode: CompletionMode,
   onChunk: (chunk: string) => void,
   signal?: AbortSignal,
+  sessionId?: string,
+  history?: HistoryTurn[],
 ): Promise<void> {
   const res = await fetch(`${BASE}/completion`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ transcript, context, mode }),
+    body: JSON.stringify({ transcript, context, mode, sessionId, history }),
     signal,
   })
 
@@ -59,3 +61,29 @@ export async function listPDFs(): Promise<{ documents: string[] }> {
   if (!res.ok) throw new Error('List failed')
   return res.json()
 }
+
+export async function upsertQA(question: string, answer: string): Promise<UpsertQAResult> {
+  const res = await fetch(`${BASE}/pinecone/qa`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question, answer }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+    throw new Error(err.error ?? `HTTP ${res.status}`)
+  }
+  return res.json()
+}
+
+export async function listHistory(): Promise<{ sessions: SessionMetadata[] }> {
+  const res = await fetch(`${BASE}/pinecone/history`)
+  if (!res.ok) throw new Error('Failed to list history')
+  return res.json()
+}
+
+export async function getHistorySession(sessionId: string): Promise<SessionDetail> {
+  const res = await fetch(`${BASE}/pinecone/history/${encodeURIComponent(sessionId)}`)
+  if (!res.ok) throw new Error('Failed to load session')
+  return res.json()
+}
+

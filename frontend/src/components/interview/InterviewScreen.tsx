@@ -6,9 +6,13 @@ import { TopBar } from './TopBar'
 import { ConversationFeed } from './ConversationFeed'
 import { MiniPlayer } from './MiniPlayer'
 
+const HISTORY_WINDOW = 8 // number of recent finalized turns to send as context
+
 export function InterviewScreen() {
   const context = useInterviewStore((s) => s.context)
+  const sessionId = useInterviewStore((s) => s.sessionId)
   const uploadedPDFs = useInterviewStore((s) => s.uploadedPDFs)
+  const turns = useInterviewStore((s) => s.turns)
   const addTurn = useInterviewStore((s) => s.addTurn)
   const appendToTurn = useInterviewStore((s) => s.appendToTurn)
   const finalizeTurn = useInterviewStore((s) => s.finalizeTurn)
@@ -49,6 +53,12 @@ export function InterviewScreen() {
       const ctrl = new AbortController()
       abortRef.current = ctrl
 
+      // Build recent history for context window (last N finalized turns)
+      const recentHistory = turns
+        .filter((t) => !t.isGenerating && t.answer)
+        .slice(-HISTORY_WINDOW)
+        .map((t) => ({ question: t.question, answer: t.answer }))
+
       try {
         await streamCompletion(
           fullTranscript,
@@ -56,6 +66,8 @@ export function InterviewScreen() {
           'copilot',
           (chunk) => appendToTurn(id, chunk),
           ctrl.signal,
+          sessionId || undefined,
+          recentHistory,
         )
       } catch (err) {
         const error = err as Error
@@ -67,7 +79,7 @@ export function InterviewScreen() {
         finalizeTurn(id)
       }
     },
-    [context, addTurn, appendToTurn, finalizeTurn, setCurrentInterimCaption],
+    [context, sessionId, turns, addTurn, appendToTurn, finalizeTurn, setCurrentInterimCaption],
   )
 
   const handleTranscript = useCallback(
