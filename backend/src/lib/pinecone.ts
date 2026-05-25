@@ -94,14 +94,13 @@ export async function upsertQA(question: string, answer: string): Promise<Upsert
   })
 
   if (existing.matches?.[0]?.score != null && existing.matches[0].score >= DEDUPE_THRESHOLD) {
-    // Update existing vector with new answer
+    // Update existing vector with new answer — reuse queryVec (already embedded above)
     const existingId = existing.matches[0].id
-    const [vec] = await embedTexts([safeQ])
     await index.upsert({
       records: [
         {
           id: existingId,
-          values: vec,
+          values: queryVec,
           metadata: { question: safeQ, answer: safeA, updatedAt: new Date().toISOString() },
         },
       ],
@@ -110,8 +109,8 @@ export async function upsertQA(question: string, answer: string): Promise<Upsert
     return { status: 'updated' }
   }
 
-  // Insert new vector
-  const [vec] = await embedTexts([safeQ])
+  // Insert new vector — reuse queryVec (already embedded above)
+  const vec = queryVec
   const id = `qa-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
   await index.upsert({
     records: [
