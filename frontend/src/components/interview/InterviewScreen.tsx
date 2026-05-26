@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useDeepgram } from '@/hooks/useDeepgram'
 import { useInterviewStore } from '@/store/useInterviewStore'
-import { streamCompletion } from '@/lib/api'
+import { streamCompletion, translateText } from '@/lib/api'
 
 import { TopBar } from './TopBar'
-import { ConversationFeed } from './ConversationFeed'
 import { MiniPlayer } from './MiniPlayer'
 
 // --- Buffer for summary turn ---
@@ -24,6 +23,7 @@ export function InterviewScreen() {
   const addTurn = useInterviewStore((s) => s.addTurn)
   const appendToTurn = useInterviewStore((s) => s.appendToTurn)
   const finalizeTurn = useInterviewStore((s) => s.finalizeTurn)
+  const updateTurnTranslation = useInterviewStore((s) => s.updateTurnTranslation)
   const setCurrentInterimCaption = useInterviewStore((s) => s.setCurrentInterimCaption)
   const setIsRecording = useInterviewStore((s) => s.setIsRecording)
   const setPhase = useInterviewStore((s) => s.setPhase)
@@ -57,6 +57,13 @@ export function InterviewScreen() {
 
       setCurrentInterimCaption('')
       const id = addTurn(fullTranscript)
+
+      // Asynchronous parallel translation in the background (non-blocking)
+      translateText(fullTranscript)
+        .then((vietnameseText) => {
+          updateTurnTranslation(id, vietnameseText)
+        })
+        .catch((err) => console.warn('Failed to translate question:', err))
 
       // --- Buffer logic (new flow) ---
       if (bufferTimerRef.current) clearTimeout(bufferTimerRef.current)
@@ -181,20 +188,8 @@ export function InterviewScreen() {
     setPhase('setup')
   }, [stop, setPhase])
 
-  // When mini player is open, blank the main page — all UI lives in the mini player
-  if (isMiniPlayerOpen) {
-    return (
-      <MiniPlayer
-        onClose={() => setIsMiniPlayerOpen(false)}
-        isRecording={status === 'connected'}
-        audioSource={audioSource}
-        isMuted={isMuted}
-        onToggleMute={toggleMute}
-        onStop={handleStop}
-        onManualSubmit={handleManualSubmit}
-      />
-    )
-  }
+  // When mini player is open, render as child portal/fallback inside the layout to avoid blank main page
+  // early return removed to keep main control panel active and lightweight
 
   // Stealth mode — show only a tiny floating dot
   if (stealthMode) {
@@ -242,8 +237,40 @@ export function InterviewScreen() {
       />
 
 
-      <div className="flex-1 p-3 overflow-hidden relative z-10">
-        <ConversationFeed />
+      {/* Ultra-lightweight glassmorphic Control Panel instead of ConversationFeed */}
+      <div className="flex-1 p-6 flex flex-col items-center justify-center relative z-10">
+        <div className="glass max-w-sm w-full rounded-2xl p-6 text-center space-y-4 shadow-xl border border-slate-200/50 bg-white/40 backdrop-blur-xl">
+          <div className="flex justify-center items-center gap-2">
+            <span className={`w-2.5 h-2.5 rounded-full ${status === 'connected' ? 'bg-red-500 animate-pulse' : 'bg-slate-300'}`} />
+            <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">
+              {status === 'connected' ? 'Session Live' : 'Session Offline'}
+            </span>
+          </div>
+          <h2 className="text-sm font-semibold text-slate-800">Copilot Session Control</h2>
+          <p className="text-[11px] text-slate-500 leading-relaxed">
+            Your interview session is currently active. Transcripts, AI Suggestions, and translations are handled inside the **Copilot Mini HUD**.
+          </p>
+          <div className="pt-2 flex flex-col gap-2">
+            {!isMiniPlayerOpen ? (
+              <button
+                onClick={() => setIsMiniPlayerOpen(true)}
+                className="w-full py-2 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs shadow-md transition-colors cursor-pointer"
+              >
+                Open Copilot Mini HUD
+              </button>
+            ) : (
+              <p className="text-[10px] text-slate-400 bg-slate-100/50 py-1.5 px-3 rounded-lg border border-slate-200/20">
+                Copilot Mini HUD is open
+              </p>
+            )}
+            <button
+              onClick={handleStop}
+              className="w-full py-2 px-4 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 font-medium text-xs transition-colors cursor-pointer"
+            >
+              Stop Interview Session
+            </button>
+          </div>
+        </div>
       </div>
 
       {isMiniPlayerOpen && (

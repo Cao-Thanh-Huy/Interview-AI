@@ -1,6 +1,7 @@
 export interface Turn {
   id: string
   question: string
+  questionTranslation?: string
   timestamp: string
   answer: string
   isGenerating: boolean

@@ -9,6 +9,33 @@ import { hotMemory } from '../lib/hotMemory.js'
 
 export const completionRouter = new Hono()
 
+completionRouter.post('/translate', async (c) => {
+  const { text } = await c.req.json<{ text: string }>()
+  if (!text?.trim()) {
+    return c.json({ error: 'text is required' }, 400)
+  }
+
+  try {
+    const response = await groq.chat.completions.create({
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a professional, extremely fast translator. Translate the following English interview question or sentence to natural, conversational Vietnamese. Output ONLY the translated text, with no explanation, no quotes, and no intro/outro.'
+        },
+        { role: 'user', content: text }
+      ],
+      model: GROQ_MODEL,
+      temperature: 0.3,
+      max_tokens: 150,
+    })
+    const translatedText = response.choices[0]?.message?.content?.trim() || ''
+    return c.json({ translation: translatedText })
+  } catch (err) {
+    console.error('Translation error in /translate route:', err)
+    return c.json({ error: 'Translation failed' }, 500)
+  }
+})
+
 const CONTEXT_WINDOW_TURNS = 8 // last N turns sent for context window management
 
 completionRouter.post('/', async (c) => {

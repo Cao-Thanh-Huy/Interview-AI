@@ -272,6 +272,12 @@ export function MiniPlayer({ onClose, onStop, onManualSubmit, isRecording, audio
               <p className="text-[11px] text-slate-500 font-medium mb-1 line-clamp-2">
                 🎤 {turn.question}
               </p>
+              {turn.questionTranslation && (
+                <p className="text-[10px] text-slate-400 italic mb-1 pl-4 flex items-center gap-1">
+                  <span>🇻🇳</span>
+                  <span>{turn.questionTranslation}</span>
+                </p>
+              )}
               {(turn.answer || turn.isGenerating) && (
                 <div className="bg-white/40 border border-slate-200/30 rounded-lg p-2">
                   <div className="flex items-center gap-1 mb-1">

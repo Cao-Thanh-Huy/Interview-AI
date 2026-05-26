@@ -65,4 +65,15 @@ export async function getHistorySession(sessionId: string): Promise<SessionDetai
   return res.json()
 }
 
+export async function translateText(text: string): Promise<string> {
+  const res = await fetch(`${BASE}/completion/translate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  })
+  if (!res.ok) throw new Error('Translation failed')
+  const data = await res.json()
+  return data.translation
+}
+
 
