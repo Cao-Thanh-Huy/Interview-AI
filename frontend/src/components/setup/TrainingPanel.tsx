@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sparkles, Save, Loader2, CheckCircle, AlertCircle, Trash2 } from 'lucide-react'
-import { streamCompletion, upsertQA } from '@/lib/api'
+import { Sparkles, Save, Loader2, CheckCircle, AlertCircle, Trash2, Languages } from 'lucide-react'
+import { streamCompletion, upsertQA, translateText } from '@/lib/api'
 import { useInterviewStore } from '@/store/useInterviewStore'
 import { cn } from '@/lib/utils'
 
@@ -16,6 +16,10 @@ export function TrainingPanel() {
 
   const [question, setQuestion] = useState('')
   const [draftAnswer, setDraftAnswer] = useState('')
+  const [showTranslation, setShowTranslation] = useState(false)
+  const [translatedAnswer, setTranslatedAnswer] = useState('')
+  const [isTranslating, setIsTranslating] = useState(false)
+  const lastTranslatedSourceRef = useRef('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [savedPairs, setSavedPairs] = useState<TrainedPair[]>([])
@@ -27,9 +31,39 @@ export function TrainingPanel() {
     setTimeout(() => setToast(null), 3000)
   }
 
+  const handleToggleTranslate = useCallback(async () => {
+    if (showTranslation) {
+      setShowTranslation(false)
+      return
+    }
+
+    const sourceText = draftAnswer.trim()
+    if (!sourceText) return
+
+    if (translatedAnswer && sourceText === lastTranslatedSourceRef.current) {
+      setShowTranslation(true)
+      return
+    }
+
+    setIsTranslating(true)
+    try {
+      const result = await translateText(sourceText)
+      setTranslatedAnswer(result)
+      lastTranslatedSourceRef.current = sourceText
+      setShowTranslation(true)
+    } catch (err) {
+      showToast('error', 'Translation failed')
+    } finally {
+      setIsTranslating(false)
+    }
+  }, [showTranslation, draftAnswer, translatedAnswer])
+
   const handleGenerate = useCallback(async () => {
     if (!question.trim()) return
     setDraftAnswer('')
+    setTranslatedAnswer('')
+    setShowTranslation(false)
+    lastTranslatedSourceRef.current = ''
     setIsGenerating(true)
     abortRef.current?.abort()
     const ctrl = new AbortController()
@@ -54,20 +88,24 @@ export function TrainingPanel() {
   }, [question, context])
 
   const handleSave = useCallback(async () => {
-    if (!question.trim() || !draftAnswer.trim()) return
+    const finalAnswer = showTranslation ? translatedAnswer : draftAnswer
+    if (!question.trim() || !finalAnswer.trim()) return
     setIsSaving(true)
     try {
-      const result = await upsertQA(question.trim(), draftAnswer.trim())
+      const result = await upsertQA(question.trim(), finalAnswer.trim())
       if (result.status === 'blocked_injection') {
         showToast('error', 'Input contains disallowed content')
         return
       }
       setSavedPairs((prev) => [
-        { id: `${Date.now()}`, question: question.trim(), answer: draftAnswer.trim() },
+        { id: `${Date.now()}`, question: question.trim(), answer: finalAnswer.trim() },
         ...prev,
       ])
       setQuestion('')
       setDraftAnswer('')
+      setTranslatedAnswer('')
+      setShowTranslation(false)
+      lastTranslatedSourceRef.current = ''
       const label = result.status === 'updated' ? 'Knowledge updated!' : 'Saved to knowledge base!'
       showToast('success', label)
     } catch (err) {
@@ -75,7 +113,7 @@ export function TrainingPanel() {
     } finally {
       setIsSaving(false)
     }
-  }, [question, draftAnswer])
+  }, [question, draftAnswer, translatedAnswer, showTranslation])
 
   return (
     <div className="space-y-5">
@@ -142,17 +180,45 @@ export function TrainingPanel() {
             exit={{ opacity: 0, height: 0 }}
             className="space-y-2"
           >
-            <label className="block text-sm font-medium text-slate-700">✏️ Edit &amp; Refine Answer</label>
+            <div className="flex items-center justify-between">
+              <label className="block text-sm font-medium text-slate-700">✏️ Edit &amp; Refine Answer</label>
+              {draftAnswer && !isGenerating && (
+                <button
+                  onClick={handleToggleTranslate}
+                  disabled={isTranslating}
+                  className={cn(
+                    'p-1 px-2.5 rounded-lg transition-all flex items-center gap-1.5 text-xs font-semibold leading-none cursor-pointer border',
+                    showTranslation
+                      ? 'text-indigo-600 bg-indigo-50 border-indigo-200 hover:bg-indigo-100'
+                      : 'text-slate-500 bg-slate-50 border-slate-200 hover:text-slate-700 hover:bg-slate-100'
+                  )}
+                  title={showTranslation ? "Show English" : "Dịch sang tiếng Việt"}
+                >
+                  {isTranslating ? (
+                    <Loader2 className="w-3 h-3 animate-spin text-indigo-500" />
+                  ) : (
+                    <Languages className="w-3.5 h-3.5" />
+                  )}
+                  <span>{showTranslation ? 'Gốc (English)' : 'Dịch (Vietnamese)'}</span>
+                </button>
+              )}
+            </div>
             <textarea
-              value={draftAnswer}
-              onChange={(e) => setDraftAnswer(e.target.value)}
+              value={showTranslation ? translatedAnswer : draftAnswer}
+              onChange={(e) => {
+                if (showTranslation) {
+                  setTranslatedAnswer(e.target.value)
+                } else {
+                  setDraftAnswer(e.target.value)
+                }
+              }}
               rows={6}
-              placeholder="AI is generating…"
+              placeholder={isGenerating ? "AI is generating…" : "Edit your answer here…"}
               className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-slate-800 text-sm resize-none outline-none focus:border-indigo-500/60 transition-all shadow-sm font-mono"
             />
             <button
               onClick={handleSave}
-              disabled={!draftAnswer.trim() || isSaving}
+              disabled={((showTranslation ? !translatedAnswer.trim() : !draftAnswer.trim()) || isSaving)}
               className={cn(
                 'w-full py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all duration-200',
                 'bg-emerald-600 text-white hover:bg-emerald-500',

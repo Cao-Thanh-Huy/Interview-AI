@@ -41,7 +41,10 @@ export function SetupScreen() {
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
-        className="relative z-10 w-full max-w-lg"
+        className={cn(
+          "relative z-10 w-full transition-all duration-300 ease-in-out",
+          activeTab === 'setup' ? 'max-w-lg' : 'max-w-4xl'
+        )}
       >
         {/* Hero */}
         <div className="text-center mb-8">

@@ -48,15 +48,16 @@ Suggestions (direct, spoken bullet points):`
 }
 
 export function buildTrainingSuggestionPrompt(context: string, question: string, ragContext = ''): string {
-  const knowledgeBlock = ragContext
-    ? `\nRelevant knowledge from candidate profile:\n${ragContext}\n\nUse the above as the foundation for the answer. Personalize and expand.\n`
+  const historyBlock = '' // Luyện tập độc lập nên không có lịch sử hội thoại trước đó
+  const ragBlock = ragContext
+    ? `Relevant Knowledge Base (CV + Trained Q&A):\n${ragContext}\n\n`
     : ''
-  return `You are a professional interview coach helping a Senior Engineer. Draft a strong, concise answer for the following question.
-Role/Context: ${context}
-${knowledgeBlock}
-Question: "${question}"
+  
+  return `${LIVE_RULES}
 
-Write a structured, conversational answer like a strong senior engineer. Use 3-4 bullet points. Total under 120 words. Be specific, practical, and lead with the key insight.`
+${context ? `Candidate Background & Context:\n${context}\n\n` : ''}${historyBlock}${ragBlock}Interviewer just asked: "${question}"
+
+Suggestions (direct, spoken bullet points):`
 }
 
 export function buildSummarizerPrompt(transcript: string): string {
