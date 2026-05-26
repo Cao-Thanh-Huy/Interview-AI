@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { Sparkles, Mic, MicOff, Monitor, Square, X, Move, SendHorizontal, Maximize2, Minimize2 } from 'lucide-react'
+import { Sparkles, Mic, MicOff, Monitor, Square, X, Move, SendHorizontal, Maximize2, Minimize2, Languages, Loader2 } from 'lucide-react'
 import { useInterviewStore } from '@/store/useInterviewStore'
+import { translateText } from '@/lib/api'
 
 // Ultra-lightweight markdown-free parser for suggestions
 function renderCleanSuggestions(text: string, isGenerating?: boolean) {
@@ -56,6 +57,35 @@ interface MiniPlayerProps {
 export function MiniPlayer({ onClose, onStop, onManualSubmit, isRecording, audioSource, isMuted, onToggleMute }: MiniPlayerProps) {
   const turns = useInterviewStore((s) => s.turns)
   const currentInterimCaption = useInterviewStore((s) => s.currentInterimCaption)
+
+  const [translatedTurnIds, setTranslatedTurnIds] = useState<Record<string, boolean>>({})
+  const [translatingIds, setTranslatingIds] = useState<Record<string, boolean>>({})
+
+  const handleToggleTranslate = useCallback(async (id: string, text: string) => {
+    const turn = turns.find((t) => t.id === id)
+    if (!turn) return
+
+    if (translatedTurnIds[id]) {
+      setTranslatedTurnIds((prev) => ({ ...prev, [id]: false }))
+      return
+    }
+
+    if (turn.answerTranslation) {
+      setTranslatedTurnIds((prev) => ({ ...prev, [id]: true }))
+      return
+    }
+
+    try {
+      setTranslatingIds((prev) => ({ ...prev, [id]: true }))
+      const result = await translateText(text)
+      useInterviewStore.getState().updateTurnAnswerTranslation(id, result)
+      setTranslatedTurnIds((prev) => ({ ...prev, [id]: true }))
+    } catch (err) {
+      console.error('Failed to translate suggestions:', err)
+    } finally {
+      setTranslatingIds((prev) => ({ ...prev, [id]: false }))
+    }
+  }, [turns, translatedTurnIds])
 
   // Only render the last 8 valid turns (Memoized Derived State - Ring Buffer)
   const recentTurns = useMemo(() => {
@@ -301,11 +331,34 @@ export function MiniPlayer({ onClose, onStop, onManualSubmit, isRecording, audio
                     <span className="text-[9px] text-indigo-600 font-semibold tracking-wider uppercase flex items-center gap-1">
                       {turn.isGenerating ? '⚡ Live Hint' : '✨ AI Suggestions'}
                     </span>
-                    {turn.isGenerating && (
+                    {turn.isGenerating ? (
                       <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse ml-auto" />
+                    ) : (
+                      <button
+                        onClick={() => handleToggleTranslate(turn.id, turn.answer)}
+                        disabled={translatingIds[turn.id]}
+                        className={`ml-auto p-1 py-0.5 rounded transition-colors flex items-center gap-1 text-[9px] font-medium leading-none ${
+                          translatedTurnIds[turn.id]
+                            ? 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100'
+                            : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+                        }`}
+                        title={translatedTurnIds[turn.id] ? "Show English" : "Dịch sang tiếng Việt"}
+                      >
+                        {translatingIds[turn.id] ? (
+                          <Loader2 className="w-2.5 h-2.5 animate-spin text-indigo-500" />
+                        ) : (
+                          <Languages className="w-2.5 h-2.5" />
+                        )}
+                        <span>{translatedTurnIds[turn.id] ? 'Gốc' : 'Dịch'}</span>
+                      </button>
                     )}
                   </div>
-                  {renderCleanSuggestions(turn.answer, turn.isGenerating)}
+                  {renderCleanSuggestions(
+                    translatedTurnIds[turn.id] && turn.answerTranslation
+                      ? turn.answerTranslation
+                      : turn.answer,
+                    turn.isGenerating
+                  )}
                 </div>
               )}
             </div>

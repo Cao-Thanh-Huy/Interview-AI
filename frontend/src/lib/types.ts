@@ -4,6 +4,7 @@ export interface Turn {
   questionTranslation?: string
   timestamp: string
   answer: string
+  answerTranslation?: string
   isGenerating: boolean
 }
 
