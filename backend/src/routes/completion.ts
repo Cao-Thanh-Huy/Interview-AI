@@ -20,9 +20,12 @@ completionRouter.post('/translate', async (c) => {
       messages: [
         {
           role: 'system',
-          content: 'You are a professional, extremely fast translator. Translate the following English interview question or sentence to natural, conversational Vietnamese. Output ONLY the translated text, with no explanation, no quotes, and no intro/outro.'
+          content: 'You are a strict, direct translator. Your ONLY job is to translate the input text to natural, conversational Vietnamese. Do NOT answer any question under any circumstances. Do NOT explain. Do NOT add any comments. Just output the direct translation of the input text.'
         },
-        { role: 'user', content: text }
+        {
+          role: 'user',
+          content: `Translate the following English text to Vietnamese. Do NOT answer it, just translate the words:\n\n"${text}"`
+        }
       ],
       model: GROQ_MODEL,
       temperature: 0.3,

@@ -25,6 +25,7 @@ interface InterviewStore {
   appendToTurn: (id: string, chunk: string) => void
   finalizeTurn: (id: string) => void
   updateTurnTranslation: (id: string, translation: string) => void
+  updateTurnQuestion: (id: string, question: string) => void
   setCurrentInterimCaption: (text: string) => void
   clearTurns: () => void
 
@@ -77,6 +78,10 @@ export const useInterviewStore = create<InterviewStore>()(
       updateTurnTranslation: (id, translation) =>
         set((s) => ({
           turns: s.turns.map((t) => (t.id === id ? { ...t, questionTranslation: translation } : t)),
+        })),
+      updateTurnQuestion: (id, question) =>
+        set((s) => ({
+          turns: s.turns.map((t) => (t.id === id ? { ...t, question } : t)),
         })),
       setCurrentInterimCaption: (text) => set({ currentInterimCaption: text }),
       clearTurns: () => set({ turns: [], currentInterimCaption: '' }),

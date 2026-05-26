@@ -31,6 +31,7 @@ export function useDeepgram({
   const pendingTranscriptRef = useRef('')
   const isMutedRef = useRef(false)
   const keepAliveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const connectionIdRef = useRef(0)
 
   const updateStatus = useCallback(
     (s: DeepgramStatus) => {
@@ -65,14 +66,22 @@ export function useDeepgram({
   }, [])
 
   const openWebSocket = useCallback(
-    async (audioStream: MediaStream) => {
+    async (audioStream: MediaStream, currentId: number) => {
       updateStatus('connecting')
 
       let key: string
       try {
         const result = await fetchDeepgramKey()
+        if (currentId !== connectionIdRef.current) {
+          audioStream.getTracks().forEach((t) => t.stop())
+          return
+        }
         key = result.key
       } catch (err) {
+        if (currentId !== connectionIdRef.current) {
+          audioStream.getTracks().forEach((t) => t.stop())
+          return
+        }
         onError?.(`Failed to get API key: ${(err as Error).message}`)
         updateStatus('error')
         return
@@ -169,11 +178,17 @@ export function useDeepgram({
   )
 
   const start = useCallback(async () => {
+    const currentId = ++connectionIdRef.current
+
     // ── Step 1: get microphone (reliable baseline, no dialog) ──────────
     let audioStream: MediaStream | null = null
 
     try {
       audioStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      if (currentId !== connectionIdRef.current) {
+        audioStream?.getTracks().forEach((t) => t.stop())
+        return
+      }
       setAudioSource('microphone')
     } catch {
       // Mic denied — will still try system audio below
@@ -185,6 +200,12 @@ export function useDeepgram({
         video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
         audio: true,
       })
+
+      if (currentId !== connectionIdRef.current) {
+        displayMedia.getTracks().forEach((t) => t.stop())
+        audioStream?.getTracks().forEach((t) => t.stop())
+        return
+      }
 
       displayStreamRef.current = displayMedia
 
@@ -213,6 +234,10 @@ export function useDeepgram({
       if (error.name !== 'NotAllowedError' && error.name !== 'AbortError') {
         console.warn('getDisplayMedia failed:', error.message)
       }
+      if (currentId !== connectionIdRef.current) {
+        audioStream?.getTracks().forEach((t) => t.stop())
+        return
+      }
     }
 
     // ── Step 3: ensure we have audio from at least one source ──────────
@@ -225,7 +250,7 @@ export function useDeepgram({
     }
 
     audioStreamRef.current = audioStream
-    await openWebSocket(audioStream)
+    await openWebSocket(audioStream, currentId)
   }, [openWebSocket, onError, updateStatus]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleMute = useCallback(() => {
@@ -250,6 +275,7 @@ export function useDeepgram({
   }, [])
 
   const stop = useCallback(() => {
+    connectionIdRef.current++
     if (keepAliveIntervalRef.current) {
       clearInterval(keepAliveIntervalRef.current)
       keepAliveIntervalRef.current = null

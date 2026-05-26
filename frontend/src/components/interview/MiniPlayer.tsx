@@ -4,8 +4,20 @@ import { Sparkles, Mic, MicOff, Monitor, Square, X, Move, SendHorizontal, Maximi
 import { useInterviewStore } from '@/store/useInterviewStore'
 
 // Ultra-lightweight markdown-free parser for suggestions
-function renderCleanSuggestions(text: string) {
-  if (!text) return null
+function renderCleanSuggestions(text: string, isGenerating?: boolean) {
+  if (!text) {
+    if (isGenerating) {
+      return (
+        <div className="space-y-2 py-1.5 animate-pulse">
+          <div className="h-2 bg-slate-200/60 rounded w-11/12" />
+          <div className="h-2 bg-slate-200/60 rounded w-10/12" />
+          <div className="h-2 bg-slate-200/60 rounded w-9/12" />
+          <div className="h-2 bg-slate-200/60 rounded w-7/12" />
+        </div>
+      )
+    }
+    return null
+  }
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
   return (
     <ul className="list-disc pl-4 space-y-1 text-xs text-slate-600">
@@ -45,8 +57,12 @@ export function MiniPlayer({ onClose, onStop, onManualSubmit, isRecording, audio
   const turns = useInterviewStore((s) => s.turns)
   const currentInterimCaption = useInterviewStore((s) => s.currentInterimCaption)
 
-  // Only render the last 8 turns (Memoized Derived State - Ring Buffer)
-  const recentTurns = useMemo(() => turns.slice(-8), [turns])
+  // Only render the last 8 valid turns (Memoized Derived State - Ring Buffer)
+  const recentTurns = useMemo(() => {
+    return turns
+      .filter((t) => t.question && t.question.trim().length >= 2)
+      .slice(-8)
+  }, [turns])
 
   // PiP Window state
   const [pipWindow, setPipWindow] = useState<Window | null>(null)
@@ -279,29 +295,21 @@ export function MiniPlayer({ onClose, onStop, onManualSubmit, isRecording, audio
                 </p>
               )}
               {(turn.answer || turn.isGenerating) && (
-                <div className="bg-white/40 border border-slate-200/30 rounded-lg p-2">
+                <div className="bg-white/40 border border-slate-200/30 rounded-lg p-2 h-[150px] overflow-y-auto flex flex-col justify-start transition-all duration-300">
                   <div className="flex items-center gap-1 mb-1">
-                    <Sparkles className="w-3 h-3 text-indigo-500" />
-                    <span className="text-[9px] text-indigo-600 font-semibold tracking-wider uppercase">
-                      AI Suggestions
+                    <Sparkles className={`w-3 h-3 ${turn.isGenerating ? 'text-indigo-500 animate-pulse' : 'text-indigo-600'}`} />
+                    <span className="text-[9px] text-indigo-600 font-semibold tracking-wider uppercase flex items-center gap-1">
+                      {turn.isGenerating ? '⚡ Live Hint' : '✨ AI Suggestions'}
                     </span>
                     {turn.isGenerating && (
                       <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse ml-auto" />
                     )}
                   </div>
-                  {renderCleanSuggestions(turn.answer)}
+                  {renderCleanSuggestions(turn.answer, turn.isGenerating)}
                 </div>
               )}
             </div>
           ))
-        )}
-
-        {/* Real-time caption row */}
-        {currentInterimCaption && (
-          <div className="bg-indigo-50/50 border border-indigo-100/50 rounded-lg p-2 italic text-[11px] text-indigo-600 leading-normal flex items-start gap-1">
-            <span className="font-semibold shrink-0">Live:</span>
-            <span>{currentInterimCaption}</span>
-          </div>
         )}
       </div>
 

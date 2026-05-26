@@ -24,6 +24,7 @@ export function InterviewScreen() {
   const appendToTurn = useInterviewStore((s) => s.appendToTurn)
   const finalizeTurn = useInterviewStore((s) => s.finalizeTurn)
   const updateTurnTranslation = useInterviewStore((s) => s.updateTurnTranslation)
+  const updateTurnQuestion = useInterviewStore((s) => s.updateTurnQuestion)
   const setCurrentInterimCaption = useInterviewStore((s) => s.setCurrentInterimCaption)
   const setIsRecording = useInterviewStore((s) => s.setIsRecording)
   const setPhase = useInterviewStore((s) => s.setPhase)
@@ -35,10 +36,22 @@ export function InterviewScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [warningMessage, setWarningMessage] = useState<string | null>(null)
 
+  // Cấu hình độ nhạy phỏng vấn lấy từ .env qua Vite
+  const DEBOUNCE_MS = parseInt(String(import.meta.env.VITE_INTERIM_DEBOUNCE_MS ?? '500'), 10) || 500
+  const SILENCE_MS = parseInt(String(import.meta.env.VITE_FINAL_SILENCE_MS ?? '1000'), 10) || 1000
+
   const startTimeRef = useRef(Date.now())
   const abortRef = useRef<AbortController | null>(null)
   const autoOpenedMiniRef = useRef(false)
   const wasConnectedRef = useRef(false)
+
+  // Refs quản lý các bộ hẹn giờ song luồng & active turn
+  const interimTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const finalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const activeTurnIdRef = useRef<string | null>(null)
+  const lastTranslatedTextRef = useRef<string>('')
+  const activeQuestionRef = useRef<string>('')
+  const lastLiveHintWordCountRef = useRef<number>(0)
 
   useEffect(() => {
     const handleVisibility = () => {
@@ -50,39 +63,98 @@ export function InterviewScreen() {
     }
   }, [])
 
-  // --- Main utterance end handler (old flow) ---
-  const handleUtteranceEnd = useCallback(
-    async (fullTranscript: string, isManual?: boolean) => {
-      if (!fullTranscript.trim()) return
+  // --- Luồng 1: Live Hint (Gợi ý AI dở dang & Dịch song song) ---
+  const triggerLiveHint = useCallback(
+    async (id: string, text: string) => {
+      if (!text.trim()) return
+
+      // Dịch song song đoạn chữ dở dang sang tiếng Việt
+      if (lastTranslatedTextRef.current !== text) {
+        lastTranslatedTextRef.current = text
+        translateText(text)
+          .then((vietnameseText) => {
+            updateTurnTranslation(id, vietnameseText)
+          })
+          .catch((err) => console.warn('Failed to translate question (Live Hint):', err))
+      }
+
+      // Hủy kết nối stream Groq cũ đang chạy
+      abortRef.current?.abort()
+      const ctrl = new AbortController()
+      abortRef.current = ctrl
+
+      const recentHistory = turns
+        .filter((t) => !t.isGenerating && t.answer && t.id !== id)
+        .slice(-HISTORY_WINDOW)
+        .map((t) => ({ question: t.question, answer: t.answer }))
+
+      try {
+        // Reset nội dung AI suggestions trước khi ghi đè dở dang mới
+        useInterviewStore.setState((s) => ({
+          turns: s.turns.map((t) => (t.id === id ? { ...t, answer: '' } : t)),
+        }))
+
+        await streamCompletion(
+          text,
+          context,
+          'copilot',
+          (chunk) => appendToTurn(id, chunk),
+          ctrl.signal,
+          sessionId || undefined,
+          recentHistory,
+        )
+      } catch (err) {
+        const error = err as Error
+        if (error.name !== 'AbortError') {
+          console.error('Groq stream error (Live Hint):', error)
+        }
+      }
+    },
+    [context, sessionId, turns, appendToTurn, updateTurnTranslation],
+  )
+
+  // --- Luồng 2: Refinement (Chốt câu hoàn chỉnh & Dịch chính thức) ---
+  const triggerFinalRefinement = useCallback(
+    async (id: string, text: string, isManual?: boolean) => {
+      if (!text.trim()) return
+
+      // Hủy bộ đếm thời gian đang chờ
+      if (interimTimerRef.current) clearTimeout(interimTimerRef.current)
+      if (finalTimerRef.current) clearTimeout(finalTimerRef.current)
 
       setCurrentInterimCaption('')
-      const id = addTurn(fullTranscript)
+      activeTurnIdRef.current = null // Giải phóng active turn
+      activeQuestionRef.current = ''
+      lastTranslatedTextRef.current = ''
+      lastLiveHintWordCountRef.current = 0 // Reset bộ đếm từ vựng cho câu mới
 
-      // Asynchronous parallel translation in the background (non-blocking)
-      translateText(fullTranscript)
+      // Dịch thuật chính thức toàn câu
+      translateText(text)
         .then((vietnameseText) => {
           updateTurnTranslation(id, vietnameseText)
         })
-        .catch((err) => console.warn('Failed to translate question:', err))
+        .catch((err) => console.warn('Failed to translate question (Final):', err))
 
-      // --- Buffer logic (new flow) ---
-      if (bufferTimerRef.current) clearTimeout(bufferTimerRef.current)
+      // Hủy stream Live Hint cũ của Luồng 1
+      abortRef.current?.abort()
+      const ctrl = new AbortController()
+      abortRef.current = ctrl
+
+      // --- Xử lý Buffer tóm tắt (nếu ngắt quãng nhiều đoạn) ---
       if (isManual) {
-        bufferRef.current = [] // clear buffer on manual submit
+        bufferRef.current = []
       } else {
-        bufferRef.current.push(fullTranscript)
-        // Reset timer to 1s
+        bufferRef.current.push(text)
+        if (bufferTimerRef.current) clearTimeout(bufferTimerRef.current)
         bufferTimerRef.current = setTimeout(() => {
-          // Only send summary if buffer has >1 utterance
           if (bufferRef.current.length > 1) {
             const summaryText = bufferRef.current.join(' ')
-            // Add summary turn with label
             const summaryId = addTurn(`${SUMMARY_LABEL}: ${summaryText}`)
-            // Use summarizer mode for this turn
             const recentHistory = turns
-              .filter((t) => !t.isGenerating && t.answer)
+              .filter((t) => !t.isGenerating && t.answer && t.id !== id && t.id !== summaryId)
               .slice(-HISTORY_WINDOW)
               .map((t) => ({ question: t.question, answer: t.answer }))
+
             streamCompletion(
               summaryText,
               context,
@@ -98,19 +170,19 @@ export function InterviewScreen() {
         }, 1000)
       }
 
-      abortRef.current?.abort()
-      const ctrl = new AbortController()
-      abortRef.current = ctrl
-
-      // Build recent history for context window (last N finalized turns)
       const recentHistory = turns
-        .filter((t) => !t.isGenerating && t.answer)
+        .filter((t) => !t.isGenerating && t.answer && t.id !== id)
         .slice(-HISTORY_WINDOW)
         .map((t) => ({ question: t.question, answer: t.answer }))
 
       try {
+        // Reset nội dung AI suggestions để chuẩn bị ghi gợi ý chính thức tối ưu nhất
+        useInterviewStore.setState((s) => ({
+          turns: s.turns.map((t) => (t.id === id ? { ...t, answer: '' } : t)),
+        }))
+
         await streamCompletion(
-          fullTranscript,
+          text,
           context,
           'copilot',
           (chunk) => appendToTurn(id, chunk),
@@ -121,21 +193,113 @@ export function InterviewScreen() {
       } catch (err) {
         const error = err as Error
         if (error.name !== 'AbortError') {
-          console.error('Groq stream error:', error)
+          console.error('Groq stream error (Final Refinement):', error)
           appendToTurn(id, '_⚠️ AI service error._')
         }
       } finally {
         finalizeTurn(id)
       }
     },
-    [context, sessionId, turns, addTurn, appendToTurn, finalizeTurn, setCurrentInterimCaption],
+    [context, sessionId, turns, addTurn, appendToTurn, finalizeTurn, updateTurnTranslation, setCurrentInterimCaption],
   )
 
-  const handleTranscript = useCallback(
-    (text: string) => {
-      setCurrentInterimCaption(text)
+  // Phản hồi dứt câu của Deepgram hoặc kích hoạt thủ công
+  const handleUtteranceEnd = useCallback(
+    async (fullTranscript: string, isManual?: boolean) => {
+      if (!fullTranscript.trim()) return
+
+      let activeId = activeTurnIdRef.current
+
+      if (isManual) {
+        // Nhập bằng tay -> Chốt hạ tức thì
+        if (!activeId) {
+          activeId = addTurn(fullTranscript)
+        } else {
+          updateTurnQuestion(activeId, fullTranscript)
+        }
+        await triggerFinalRefinement(activeId, fullTranscript, true)
+      } else {
+        // Nói bằng giọng nói -> Ghép câu thông minh (cộng dồn)
+        if (!activeId) {
+          // BỎ QUA hoàn toàn sự kiện UtteranceEnd tự động của Deepgram nếu đã được chốt câu trước đó bởi timer 2s
+          return
+        }
+
+        const newCombined = `${activeQuestionRef.current} ${fullTranscript}`.trim()
+        activeQuestionRef.current = newCombined
+        updateTurnQuestion(activeId, newCombined)
+
+        // Gọi sinh Live Hint cho toàn bộ câu hỏi đã cộng dồn
+        await triggerLiveHint(activeId, activeQuestionRef.current)
+
+        // Đặt lại bộ đếm thời gian chốt hạ 2 giây dựa trên câu hỏi cộng dồn
+        if (finalTimerRef.current) clearTimeout(finalTimerRef.current)
+        finalTimerRef.current = setTimeout(() => {
+          if (activeTurnIdRef.current) {
+            triggerFinalRefinement(activeTurnIdRef.current, activeQuestionRef.current, false)
+          }
+        }, SILENCE_MS)
+      }
     },
-    [setCurrentInterimCaption],
+    [addTurn, updateTurnQuestion, triggerLiveHint, triggerFinalRefinement, SILENCE_MS],
+  )
+
+  // Điều phối nhận chữ thời gian thực từ Deepgram để đếm Timers
+  const handleTranscript = useCallback(
+    (text: string, isFinal?: boolean) => {
+      setCurrentInterimCaption(text)
+      if (!text.trim()) return
+
+      let activeId = activeTurnIdRef.current
+      // Câu hỏi đầy đủ bao gồm phần đã chốt dở dang + chữ đang nói tạm thời của phân đoạn hiện tại
+      const combinedText = activeQuestionRef.current
+        ? `${activeQuestionRef.current} ${text}`.trim()
+        : text
+
+      if (!activeId) {
+        // TỰ ĐỘNG KHÔI PHỤC (Self-healing):
+        // Nếu activeId đang null, nhưng câu mới này thực chất là phần tiếp nối (superset)
+        // của lượt thoại cuối cùng trong store, thì ta khôi phục lại lượt thoại đó thay vì addTurn mới!
+        const currentTurns = useInterviewStore.getState().turns
+        const lastTurn = currentTurns[currentTurns.length - 1]
+        
+        if (lastTurn && combinedText.startsWith(lastTurn.question.trim())) {
+          activeId = lastTurn.id
+          activeTurnIdRef.current = activeId
+          updateTurnQuestion(activeId, combinedText)
+        } else {
+          activeId = addTurn(combinedText)
+          activeTurnIdRef.current = activeId
+        }
+      } else {
+        updateTurnQuestion(activeId, combinedText)
+      }
+
+      // --- BỘ ĐẾM 1: DEBOUNCE (LIVE HINT) ---
+      if (interimTimerRef.current) clearTimeout(interimTimerRef.current)
+      interimTimerRef.current = setTimeout(() => {
+        const wordCount = combinedText.split(/\s+/).filter(Boolean).length
+        const lastWordCount = lastLiveHintWordCountRef.current
+        const newWordsSpoken = wordCount - lastWordCount
+
+        if (newWordsSpoken >= 5) {
+          lastLiveHintWordCountRef.current = wordCount
+          triggerLiveHint(activeId!, combinedText)
+        }
+      }, DEBOUNCE_MS)
+
+      // --- BỘ ĐẾM 2: CHỐT CÂU (FINAL REFINEMENT) ---
+      if (finalTimerRef.current) clearTimeout(finalTimerRef.current)
+      if (isFinal) {
+        finalTimerRef.current = setTimeout(() => {
+          if (activeTurnIdRef.current) {
+            const finalPromptText = activeQuestionRef.current || combinedText
+            triggerFinalRefinement(activeTurnIdRef.current, finalPromptText, false)
+          }
+        }, SILENCE_MS)
+      }
+    },
+    [addTurn, updateTurnQuestion, triggerLiveHint, triggerFinalRefinement, DEBOUNCE_MS, SILENCE_MS, setCurrentInterimCaption],
   )
 
   const handleStatusChange = useCallback(
