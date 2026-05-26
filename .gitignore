@@ -50,11 +50,11 @@ coverage/
 tmp/
 
 # ── Runtime data ──────────────────────────────────────────
-backend/data/
+backend/data/memory.db-shm
+backend/data/memory.db-wal
+backend/data/history/
 .pids
-
 temp/
-.pids
 
 # ── pdf-parse test stub (generated at runtime) ────────────
 backend/test/
