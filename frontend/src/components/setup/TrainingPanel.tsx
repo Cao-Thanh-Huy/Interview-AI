@@ -199,7 +199,7 @@ export function TrainingPanel() {
       )}
 
       <p className="text-[11px] text-slate-400 font-medium">
-        Saved answers are semantically indexed and retrieved during live interviews via Pinecone RAG.
+        Saved answers are semantically indexed and retrieved during live interviews via Local Hybrid RAG.
       </p>
     </div>
   )

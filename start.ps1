@@ -23,13 +23,13 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     }
 }
 
-# Check backend/.env
-if (-not (Test-Path (Join-Path $ROOT "backend\.env"))) {
+# Check root .env
+if (-not (Test-Path (Join-Path $ROOT ".env"))) {
     Write-Host ""
-    Write-Host "  WARNING: backend\.env not found." -ForegroundColor Yellow
-    Write-Host "  Copy .env.example -> backend\.env and fill in your API keys:"
+    Write-Host "  WARNING: .env not found." -ForegroundColor Yellow
+    Write-Host "  Copy .env.example -> .env and fill in your API keys:"
     Write-Host ""
-    Write-Host "    Copy-Item .env.example backend\.env"
+    Write-Host "    Copy-Item .env.example .env"
     Write-Host ""
     exit 1
 }

@@ -1,10 +1,15 @@
-const LIVE_RULES = `RULES (STRICT):
-- Output ONLY 3-5 bullet points (• prefix). No intro sentence. No outro.
-- Each bullet: MAX 15 words.
-- Use STAR keywords: Situation/Task/Action/Result.
-- Prefer concrete keywords and numbers over vague phrases.
-- If a simple factual question: ONE bullet only (name, date, location, etc.).
-- No prose, no paragraphs, no filler words.`
+const LIVE_RULES = `STRICT SYSTEM INSTRUCTIONS:
+- You are a realtime interview copilot.
+- Answer like a strong senior engineer speaking naturally in a live interview.
+- Concise but insightful: Explain trade-offs, solutions, or actions directly.
+- Practical over theoretical: Focus on real-world engineering actions and numbers rather than academic definitions.
+- Conversational, not academic: Use short spoken-style sentences. Avoid sounding like ChatGPT.
+- Avoid generic filler, intro sentences, or outro sentences. Start directly with the first suggestion.
+- Lead with the key insight first. Explain tradeoffs when relevant.
+- Structure: Output ONLY 3-4 short bullet points (prefix with •).
+- Keep each bullet extremely short (under 15 words). Total response must be under 120 words.
+- Prioritize confidence, clarity, and match the depth of the question.
+- Use the candidate's background and saved knowledge whenever relevant.`
 
 export interface HistoryTurn {
   question: string
@@ -13,14 +18,14 @@ export interface HistoryTurn {
 
 export function buildPrompt(context: string, transcript: string, history: HistoryTurn[] = []): string {
   const historyBlock = history.length > 0
-    ? `Recent conversation:\n${history.map((t) => `Q: ${t.question}\nA: ${t.answer}`).join('\n\n')}\n\n`
+    ? `Recent conversation history:\n${history.map((t) => `Q: ${t.question}\nA: ${t.answer}`).join('\n\n')}\n\n`
     : ''
-  return `You are a live interview copilot giving a candidate real-time bullet-point suggestions.
-${context ? `Session context: ${context}\n` : ''}${historyBlock}${LIVE_RULES}
+  return `${LIVE_RULES}
 
+${context ? `Candidate Background & Context:\n${context}\n\n` : ''}${historyBlock}
 Interviewer just asked: "${transcript}"
 
-Suggestions:`
+Suggestions (direct, spoken bullet points):`
 }
 
 export function buildRAGPrompt(
@@ -30,28 +35,28 @@ export function buildRAGPrompt(
   history: HistoryTurn[] = [],
 ): string {
   const historyBlock = history.length > 0
-    ? `Recent conversation:\n${history.map((t) => `Q: ${t.question}\nA: ${t.answer}`).join('\n\n')}\n\n`
+    ? `Recent conversation history:\n${history.map((t) => `Q: ${t.question}\nA: ${t.answer}`).join('\n\n')}\n\n`
     : ''
-  return `You are a live interview copilot giving a candidate real-time bullet-point suggestions.
-${context ? `Session context: ${context}\n` : ''}${historyBlock}Knowledge base (CV + trained QA):
-${ragContext}
+  return `${LIVE_RULES}
 
-${LIVE_RULES}
+${context ? `Candidate Background & Context:\n${context}\n\n` : ''}${historyBlock}Relevant Knowledge Base (CV + Trained Q&A):
+${ragContext}
 
 Interviewer just asked: "${transcript}"
 
-Suggestions:`
+Suggestions (direct, spoken bullet points):`
 }
 
 export function buildTrainingSuggestionPrompt(context: string, question: string, ragContext = ''): string {
   const knowledgeBlock = ragContext
-    ? `\nRelevant knowledge from your profile:\n${ragContext}\n\nUse the above as the foundation for your answer. Personalize and expand as needed.\n`
+    ? `\nRelevant knowledge from candidate profile:\n${ragContext}\n\nUse the above as the foundation for the answer. Personalize and expand.\n`
     : ''
-  return `You are a professional interview coach. Draft a strong, concise answer for the following interview question.
-${context ? `Role/Context: ${context}\n` : ''}${knowledgeBlock}
+  return `You are a professional interview coach helping a Senior Engineer. Draft a strong, concise answer for the following question.
+Role/Context: ${context}
+${knowledgeBlock}
 Question: "${question}"
 
-Write a structured answer using the STAR method. Use 4-5 bullet points. Each bullet ≤ 20 words. Be specific and impactful.`
+Write a structured, conversational answer like a strong senior engineer. Use 3-4 bullet points. Total under 120 words. Be specific, practical, and lead with the key insight.`
 }
 
 export function buildSummarizerPrompt(transcript: string): string {
@@ -62,3 +67,4 @@ ${transcript}
 
 Summary:`
 }
+

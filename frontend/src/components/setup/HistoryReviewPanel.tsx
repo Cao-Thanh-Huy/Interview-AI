@@ -212,7 +212,7 @@ export function HistoryReviewPanel() {
       </div>
 
       <p className="text-[11px] text-slate-400 font-medium">
-        Sessions are stored locally on disk. "Memorize" promotes a turn to the permanent Pinecone knowledge base.
+        Sessions are stored locally on disk. "Memorize" promotes a turn to the permanent Local knowledge base.
       </p>
     </div>
   )

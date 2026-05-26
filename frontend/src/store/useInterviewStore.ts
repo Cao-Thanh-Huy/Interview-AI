@@ -46,10 +46,8 @@ export const useInterviewStore = create<InterviewStore>()(
       setContext: (context) => set({ context }),
 
       uploadedPDFs: [],
-      addPDF: (filename) =>
-        set((s) => ({ uploadedPDFs: [...s.uploadedPDFs, filename] })),
-      removePDF: (filename) =>
-        set((s) => ({ uploadedPDFs: s.uploadedPDFs.filter((f) => f !== filename) })),
+      addPDF: () => {},
+      removePDF: () => {},
 
       sessionId: '',
       initSession: () => set({ sessionId: Date.now().toString(), turns: [], currentInterimCaption: '' }),

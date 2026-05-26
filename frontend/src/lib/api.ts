@@ -40,30 +40,8 @@ export async function streamCompletion(
   }
 }
 
-export async function uploadPDF(file: File): Promise<{ filename: string; chunks: number }> {
-  const formData = new FormData()
-  formData.append('file', file)
-  const res = await fetch(`${BASE}/pdf`, { method: 'POST', body: formData })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'Upload failed' }))
-    throw new Error(err.error ?? 'Upload failed')
-  }
-  return res.json()
-}
-
-export async function deletePDF(filename: string): Promise<void> {
-  const res = await fetch(`${BASE}/pdf/${encodeURIComponent(filename)}`, { method: 'DELETE' })
-  if (!res.ok) throw new Error('Delete failed')
-}
-
-export async function listPDFs(): Promise<{ documents: string[] }> {
-  const res = await fetch(`${BASE}/pdf`)
-  if (!res.ok) throw new Error('List failed')
-  return res.json()
-}
-
 export async function upsertQA(question: string, answer: string): Promise<UpsertQAResult> {
-  const res = await fetch(`${BASE}/pinecone/qa`, {
+  const res = await fetch(`${BASE}/knowledge/qa`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ question, answer }),
@@ -76,14 +54,15 @@ export async function upsertQA(question: string, answer: string): Promise<Upsert
 }
 
 export async function listHistory(): Promise<{ sessions: SessionMetadata[] }> {
-  const res = await fetch(`${BASE}/pinecone/history`)
+  const res = await fetch(`${BASE}/knowledge/history`)
   if (!res.ok) throw new Error('Failed to list history')
   return res.json()
 }
 
 export async function getHistorySession(sessionId: string): Promise<SessionDetail> {
-  const res = await fetch(`${BASE}/pinecone/history/${encodeURIComponent(sessionId)}`)
+  const res = await fetch(`${BASE}/knowledge/history/${encodeURIComponent(sessionId)}`)
   if (!res.ok) throw new Error('Failed to load session')
   return res.json()
 }
+
 

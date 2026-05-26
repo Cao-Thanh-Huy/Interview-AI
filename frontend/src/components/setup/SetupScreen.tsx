@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Zap, Mic, Dumbbell, History } from 'lucide-react'
-import { CVUpload } from './CVUpload'
 import { TrainingPanel } from './TrainingPanel'
 import { HistoryReviewPanel } from './HistoryReviewPanel'
 import { useInterviewStore } from '@/store/useInterviewStore'
@@ -76,48 +75,61 @@ export function SetupScreen() {
         <div className="glass rounded-2xl p-6 shadow-2xl shadow-slate-200/50 bg-white/70">
           {/* Tab 1: Setup Session */}
           {activeTab === 'setup' && (
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <label htmlFor="context" className="block text-sm font-medium text-slate-700">
-                  💼 Interview Context
-                </label>
-                <textarea
-                  id="context"
-                  value={context}
-                  onChange={(e) => setContext(e.target.value)}
-                  placeholder="e.g., Senior React Developer at Acme Corp. Keep answers concise, use STAR method, 3-4 bullet points max."
-                  rows={3}
-                  className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-slate-800 text-sm placeholder:text-slate-400 resize-none outline-none focus:border-indigo-500/60 focus:bg-white transition-all duration-200 shadow-sm"
-                />
-                <p className="text-[10px] text-slate-400 font-semibold tracking-wide">AI uses this to tailor every suggestion</p>
+            <div className="space-y-6 text-center py-4">
+              {/* Animated Listening/Mic Signal Visual */}
+              <div className="relative flex items-center justify-center w-24 h-24 mx-auto mb-2">
+                {/* Outer pulsing ring */}
+                <div className="absolute inset-0 rounded-full bg-indigo-500/10 animate-ping" />
+                {/* Inner pulsing ring */}
+                <div className="absolute w-16 h-16 rounded-full bg-indigo-500/20 animate-pulse" />
+                {/* Center Core Circle with Icon */}
+                <div className="relative w-12 h-12 rounded-full bg-gradient-to-br from-indigo-600 to-indigo-700 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                  <Mic className="w-5 h-5 text-white" />
+                </div>
               </div>
 
-              <CVUpload />
+              {/* Status Badge */}
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 shadow-sm">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span className="text-[11px] font-bold uppercase tracking-wider">AI Copilot Ready</span>
+              </div>
 
-              <div className="border-t border-slate-200/50" />
+              {/* Core Description */}
+              <div className="max-w-xs mx-auto space-y-2">
+                <h3 className="text-base font-semibold text-slate-800">Start Your Live Copilot</h3>
+                <p className="text-xs text-slate-400 leading-relaxed font-medium">
+                  The system will automatically listen to your interview and query the pre-trained SQLite Knowledge Base to generate real-world senior level suggestions.
+                </p>
+              </div>
+
+              <div className="border-t border-slate-100" />
 
               <button
                 onClick={handleStart}
                 disabled={isStarting}
                 className={cn(
-                  'w-full py-3.5 rounded-xl font-semibold text-white text-sm cursor-pointer',
-                  'bg-gradient-to-r from-indigo-600 to-cyan-500',
-                  'hover:from-indigo-500 hover:to-cyan-400',
+                  'w-full py-4 rounded-xl font-bold text-white text-sm cursor-pointer',
+                  'bg-gradient-to-r from-indigo-600 via-indigo-700 to-cyan-600',
+                  'hover:from-indigo-500 hover:via-indigo-600 hover:to-cyan-500',
+                  'active:scale-[0.98]',
                   'transition-all duration-200',
                   'flex items-center justify-center gap-2',
-                  'shadow-lg shadow-indigo-600/20',
+                  'shadow-lg shadow-indigo-600/25',
                   'disabled:opacity-60 disabled:cursor-not-allowed',
                 )}
               >
                 {isStarting ? (
                   <>
                     <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Starting session...
+                    Initializing Copilot...
                   </>
                 ) : (
                   <>
-                    <Mic className="w-4 h-4" />
-                    Start Interview Session
+                    <Zap className="w-4 h-4" />
+                    Launch Interview Session
                   </>
                 )}
               </button>

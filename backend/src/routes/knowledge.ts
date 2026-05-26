@@ -1,16 +1,16 @@
 import { Hono } from 'hono'
-import { upsertQA, isPineconeEnabled } from '../lib/pinecone.js'
+import { upsertQA, isLocalStoreEnabled } from '../lib/localStore.js'
 import { hasInjectionAttempt } from '../lib/queryUtils.js'
 import { listSessions, getSessionTurns, getSessionMeta } from '../lib/historyStore.js'
 
-export const pineconeRouter = new Hono()
+export const knowledgeRouter = new Hono()
 
 /**
- * POST /api/pinecone/qa
- * Upsert a QA pair into Pinecone (with dedupe + injection guard).
+ * POST /api/knowledge/qa
+ * Upsert một cặp Q&A vào SQLite cục bộ (kèm FTS5 + Vector + trùng lặp guard).
  * Body: { question: string; answer: string }
  */
-pineconeRouter.post('/qa', async (c) => {
+knowledgeRouter.post('/qa', async (c) => {
   const body = await c.req.json<{ question?: string; answer?: string }>()
   const { question, answer } = body
 
@@ -22,24 +22,24 @@ pineconeRouter.post('/qa', async (c) => {
     return c.json({ error: 'Input contains disallowed content', status: 'blocked_injection' }, 400)
   }
 
-  if (!isPineconeEnabled()) {
-    return c.json({ error: 'Pinecone is not configured (PINECONE_API_KEY missing)' }, 503)
+  if (!isLocalStoreEnabled()) {
+    return c.json({ error: 'Local store is missing API Key for vector embedding generation' }, 503)
   }
 
   try {
     const result = await upsertQA(question.trim(), answer.trim())
     return c.json(result)
   } catch (err) {
-    console.error('Pinecone upsert error:', err)
-    return c.json({ error: 'Failed to save to knowledge base' }, 500)
+    console.error('Knowledge upsert error:', err)
+    return c.json({ error: 'Failed to save to local knowledge base' }, 500)
   }
 })
 
 /**
- * GET /api/history
- * Returns a list of all recorded interview sessions (newest first).
+ * GET /api/knowledge/history
+ * Trả về danh sách toàn bộ các phiên phỏng vấn đã lưu (mới nhất xếp trước).
  */
-pineconeRouter.get('/history', (c) => {
+knowledgeRouter.get('/history', (c) => {
   try {
     const sessions = listSessions()
     return c.json({ sessions })
@@ -50,10 +50,10 @@ pineconeRouter.get('/history', (c) => {
 })
 
 /**
- * GET /api/history/:sessionId
- * Returns metadata + turns for a specific session.
+ * GET /api/knowledge/history/:sessionId
+ * Trả về metadata + danh sách câu hỏi/trả lời cho một phiên cụ thể.
  */
-pineconeRouter.get('/history/:sessionId', (c) => {
+knowledgeRouter.get('/history/:sessionId', (c) => {
   const sessionId = c.req.param('sessionId')
   // Validate sessionId to prevent path traversal
   if (!/^[\w-]+$/.test(sessionId)) {

@@ -1,11 +1,11 @@
 import { Hono } from 'hono'
 import { streamText } from 'hono/streaming'
 import groq, { GROQ_MODEL } from '../lib/groq.js'
-import { pdfStore } from '../lib/pdfStore.js'
 import { buildPrompt, buildRAGPrompt, buildSummarizerPrompt, buildTrainingSuggestionPrompt, type HistoryTurn } from '../lib/prompts.js'
-import { semanticSearch, isPineconeEnabled } from '../lib/pinecone.js'
+import { semanticSearch, isLocalStoreEnabled } from '../lib/localStore.js'
 import { isFillerTranscript, buildRetrievalQuery } from '../lib/queryUtils.js'
 import { appendTurn } from '../lib/historyStore.js'
+import { hotMemory } from '../lib/hotMemory.js'
 
 export const completionRouter = new Hono()
 
@@ -26,10 +26,10 @@ completionRouter.post('/', async (c) => {
     return c.json({ error: 'transcript is required' }, 400)
   }
 
-  // Training mode: search Pinecone first — use stored knowledge if found, else generate fresh
+  // Training mode: search local database first — use stored knowledge if found, else generate fresh
   if (mode === 'training') {
     let ragContext = ''
-    if (isPineconeEnabled()) {
+    if (isLocalStoreEnabled()) {
       try {
         const results = await semanticSearch(transcript, 3)
         if (results.length > 0) {
@@ -41,7 +41,7 @@ completionRouter.post('/', async (c) => {
             .join('\n\n')
         }
       } catch (err) {
-        console.warn('Pinecone search error (training):', err)
+        console.warn('LocalStore search error (training):', err)
       }
     }
     const prompt = buildTrainingSuggestionPrompt(context, transcript, ragContext)
@@ -96,19 +96,31 @@ completionRouter.post('/', async (c) => {
   // Check for filler transcript — skip RAG, use minimal prompt
   const isFiller = isFillerTranscript(transcript)
 
-  if (!isFiller && isPineconeEnabled()) {
-    // Pinecone semantic RAG path
+  // Cập nhật trạng thái cuộc trò chuyện gần nhất vào RAM hotMemory để lưu vết
+  if (recentHistory.length > 0) {
+    const historyText = recentHistory.map((t) => `Q: ${t.question}\nA: ${t.answer}`).join('\n')
+    hotMemory.setActiveInterviewState(historyText)
+  }
+
+  if (!isFiller && isLocalStoreEnabled()) {
+    // Local hybrid RAG path
     const retrievalQuery = buildRetrievalQuery(transcript)
-    let ragResults: import('../lib/pinecone.js').SearchResult[] = []
+    let ragResults: import('../lib/localStore.js').SearchResult[] = []
     try {
       ragResults = await semanticSearch(retrievalQuery, 5)
     } catch (err) {
-      console.error('Pinecone search error:', err)
-      // fallback to pdfStore below
+      console.error('LocalStore search error:', err)
     }
 
     if (ragResults.length > 0) {
-      const ragContext = ragResults
+      // Tự động nhận diện và cập nhật Topic hiện tại lên RAM Hot Memory để phục vụ Topic Continuity
+      const topMatch = ragResults[0]
+      if (topMatch.question) {
+        hotMemory.setCurrentTopic(topMatch.question)
+      }
+
+      // Trích xuất các tri thức tìm được từ DB
+      const dbRagText = ragResults
         .map((r) => {
           if (r.type === 'cv' && r.text) return `CV: ${r.text}`
           if (r.question && r.answer) return `Q: ${r.question}\nA: ${r.answer}`
@@ -116,17 +128,23 @@ completionRouter.post('/', async (c) => {
         })
         .filter(Boolean)
         .join('\n\n')
-      prompt = buildRAGPrompt(context, transcript, ragContext, recentHistory)
+      
+      // Kết hợp tri thức DB + Tóm tắt CV/JD từ RAM Hot Memory thành Prompt RAG siêu mạnh
+      const ramContext = hotMemory.getCompactContextMarkdown()
+      const combinedRagContext = [ramContext, dbRagText].filter(Boolean).join('\n\n')
+
+      prompt = buildRAGPrompt(context, transcript, combinedRagContext, recentHistory)
     } else {
-      // Nothing above threshold — skip RAG to avoid hallucination
-      prompt = buildPrompt(context, transcript, recentHistory)
+      // Nothing above threshold — dùng Prompt thường kết hợp RAM Hot Memory
+      const ramContext = hotMemory.getCompactContextMarkdown()
+      const combinedContext = [context, ramContext].filter(Boolean).join('\n\n')
+      prompt = buildPrompt(combinedContext, transcript, recentHistory)
     }
   } else {
-    // Pinecone not available — fall back to local pdfStore
-    const chunks = pdfStore.search(transcript, 5)
-    prompt = chunks.length > 0
-      ? buildRAGPrompt(context, transcript, chunks.join('\n\n'), recentHistory)
-      : buildPrompt(context, transcript, recentHistory)
+    // LocalStore bị disable hoặc bị lỗi, dùng Prompt thường kết hợp RAM Hot Memory
+    const ramContext = hotMemory.getCompactContextMarkdown()
+    const combinedContext = [context, ramContext].filter(Boolean).join('\n\n')
+    prompt = buildPrompt(combinedContext, transcript, recentHistory)
   }
 
   let groqStream
@@ -171,4 +189,5 @@ completionRouter.post('/', async (c) => {
     }
   })
 })
+
 

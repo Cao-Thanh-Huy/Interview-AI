@@ -33,38 +33,19 @@ const TurnItem = memo(function TurnItem({ turn }: { turn: Turn }) {
       </div>
 
       {/* AI Answer */}
-      {(turn.answer || turn.isGenerating) && (
+      {turn.answer && !turn.isGenerating && (
         <div className="ml-[72px]">
           <div className="flex items-center gap-1.5 mb-1.5">
             <div className="w-4 h-4 rounded-md bg-indigo-500/10 flex items-center justify-center">
               <Sparkles className="w-2.5 h-2.5 text-indigo-600" />
             </div>
-            {turn.isGenerating && (
-              <div className="flex gap-0.5">
-                {[0, 1, 2].map((i) => (
-                  <span
-                    key={i}
-                    className="w-1 h-1 rounded-full bg-indigo-500/60 animate-bounce"
-                    style={{ animationDelay: `${i * 0.12}s` }}
-                  />
-                ))}
-              </div>
-            )}
           </div>
           <div className="border-l-2 border-indigo-500/20 pl-3">
             <div className="prose prose-slate prose-sm max-w-none text-slate-700 leading-relaxed
               [&>ul]:mt-1 [&>ul]:mb-0 [&>ul>li]:mt-0.5 [&>ul>li]:text-slate-600
               [&>p]:mt-0 [&>p]:mb-1">
-              {/* Skip heavy ReactMarkdown while streaming — use plain text for speed */}
-              {turn.isGenerating ? (
-                <p className="whitespace-pre-wrap">{turn.answer}</p>
-              ) : (
-                <ReactMarkdown>{turn.answer}</ReactMarkdown>
-              )}
+              <ReactMarkdown>{turn.answer}</ReactMarkdown>
             </div>
-            {turn.isGenerating && (
-              <span className="inline-block w-0.5 h-3.5 bg-indigo-500 animate-pulse rounded-full ml-0.5 align-middle" />
-            )}
           </div>
         </div>
       )}
@@ -72,25 +53,7 @@ const TurnItem = memo(function TurnItem({ turn }: { turn: Turn }) {
   )
 })
 
-function LiveCaption() {
-  const currentInterimCaption = useInterviewStore((s) => s.currentInterimCaption)
-
-  if (!currentInterimCaption) return null
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="flex items-start gap-2 mb-2"
-    >
-      <span className="shrink-0 text-[10px] text-slate-400 mt-1 font-mono">Now</span>
-      <div className="bg-indigo-500/[0.04] border border-indigo-500/10 rounded-xl px-3 py-2 text-sm text-indigo-600/70 italic leading-relaxed">
-        {currentInterimCaption}
-        <span className="inline-block w-0.5 h-3.5 bg-indigo-500/50 animate-pulse rounded-full ml-0.5 align-middle" />
-      </div>
-    </motion.div>
-  )
-}
+// LiveCaption removed from main page, only show in MiniPlayer
 
 export function ConversationFeed() {
   const turns = useInterviewStore((s) => s.turns)
@@ -146,7 +109,9 @@ export function ConversationFeed() {
     })
   }
 
-  const isEmpty = turns.length === 0
+  // Only show finalized turns (not isGenerating)
+  const finalizedTurns = turns.filter((t) => !t.isGenerating)
+  const isEmpty = finalizedTurns.length === 0
 
   return (
     <div className="glass rounded-2xl flex flex-col overflow-hidden h-full relative">
@@ -182,15 +147,14 @@ export function ConversationFeed() {
         ) : (
           <div className="space-y-1">
             <AnimatePresence initial={false}>
-              {turns.map((turn) => (
+              {finalizedTurns.map((turn) => (
                 <TurnItem key={turn.id} turn={turn} />
               ))}
             </AnimatePresence>
           </div>
         )}
 
-        {/* Live isolated interim caption */}
-        <LiveCaption />
+        {/* No live caption here, only in MiniPlayer */}
       </div>
 
       {/* Floating Smart Scroll Badge */}

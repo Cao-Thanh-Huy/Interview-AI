@@ -1,7 +1,11 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const HISTORY_BASE = path.resolve('data', 'history')
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+const HISTORY_BASE = path.resolve(__dirname, '..', '..', 'data', 'history')
 
 export interface SessionMetadata {
   sessionId: string

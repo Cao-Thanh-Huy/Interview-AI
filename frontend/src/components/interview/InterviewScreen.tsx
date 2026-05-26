@@ -1,14 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useDeepgram } from '@/hooks/useDeepgram'
 import { useInterviewStore } from '@/store/useInterviewStore'
-import { streamCompletion, listPDFs } from '@/lib/api'
+import { streamCompletion } from '@/lib/api'
+
 import { TopBar } from './TopBar'
 import { ConversationFeed } from './ConversationFeed'
 import { MiniPlayer } from './MiniPlayer'
 
+// --- Buffer for summary turn ---
+const SUMMARY_LABEL = '🔁 Full context';
+
 const HISTORY_WINDOW = 8 // number of recent finalized turns to send as context
 
 export function InterviewScreen() {
+  // Buffer state for summary turn
+  const bufferRef = useRef<string[]>([])
+  const bufferTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [_, forceRerender] = useState(0) // for UI update if needed
   const context = useInterviewStore((s) => s.context)
   const sessionId = useInterviewStore((s) => s.sessionId)
   const uploadedPDFs = useInterviewStore((s) => s.uploadedPDFs)
@@ -26,7 +34,7 @@ export function InterviewScreen() {
   const [isTabVisible, setIsTabVisible] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [warningMessage, setWarningMessage] = useState<string | null>(null)
-  const [cvWarning, setCvWarning] = useState(false)
+
   const startTimeRef = useRef(Date.now())
   const abortRef = useRef<AbortController | null>(null)
   const autoOpenedMiniRef = useRef(false)
@@ -42,12 +50,46 @@ export function InterviewScreen() {
     }
   }, [])
 
+  // --- Main utterance end handler (old flow) ---
   const handleUtteranceEnd = useCallback(
-    async (fullTranscript: string) => {
+    async (fullTranscript: string, isManual?: boolean) => {
       if (!fullTranscript.trim()) return
 
       setCurrentInterimCaption('')
       const id = addTurn(fullTranscript)
+
+      // --- Buffer logic (new flow) ---
+      if (bufferTimerRef.current) clearTimeout(bufferTimerRef.current)
+      if (isManual) {
+        bufferRef.current = [] // clear buffer on manual submit
+      } else {
+        bufferRef.current.push(fullTranscript)
+        // Reset timer to 1s
+        bufferTimerRef.current = setTimeout(() => {
+          // Only send summary if buffer has >1 utterance
+          if (bufferRef.current.length > 1) {
+            const summaryText = bufferRef.current.join(' ')
+            // Add summary turn with label
+            const summaryId = addTurn(`${SUMMARY_LABEL}: ${summaryText}`)
+            // Use summarizer mode for this turn
+            const recentHistory = turns
+              .filter((t) => !t.isGenerating && t.answer)
+              .slice(-HISTORY_WINDOW)
+              .map((t) => ({ question: t.question, answer: t.answer }))
+            streamCompletion(
+              summaryText,
+              context,
+              'summarizer',
+              (chunk) => appendToTurn(summaryId, chunk),
+              undefined,
+              sessionId || undefined,
+              recentHistory,
+            ).finally(() => finalizeTurn(summaryId))
+          }
+          bufferRef.current = []
+          forceRerender((v) => v + 1)
+        }, 1000)
+      }
 
       abortRef.current?.abort()
       const ctrl = new AbortController()
@@ -97,9 +139,13 @@ export function InterviewScreen() {
   const handleError = useCallback((msg: string) => setErrorMessage(msg), [])
   const handleWarning = useCallback((msg: string) => setWarningMessage(msg), [])
 
+  // Wrap onUtteranceEnd to support isManual param
+  const handleUtteranceEndWrapper = useCallback((text: string) => handleUtteranceEnd(text, false), [handleUtteranceEnd])
+  const handleManualSubmit = useCallback((text: string) => handleUtteranceEnd(text, true), [handleUtteranceEnd])
+
   const { start, stop, status, audioSource, isMuted, toggleMute } = useDeepgram({
     onTranscript: handleTranscript,
-    onUtteranceEnd: handleUtteranceEnd,
+    onUtteranceEnd: handleUtteranceEndWrapper,
     onStatusChange: handleStatusChange,
     onError: handleError,
     onWarning: handleWarning,
@@ -122,20 +168,9 @@ export function InterviewScreen() {
     }
   }, [status, setPhase])
 
-  // Auto-start on mount + CV check
+  // Auto-start on mount
   useEffect(() => {
     start()
-
-    // Check if CV the user uploaded is still in backend memory
-    if (uploadedPDFs.length > 0) {
-      listPDFs()
-        .then(({ documents }) => {
-          const missing = uploadedPDFs.some((f) => !documents.includes(f))
-          if (missing) setCvWarning(true)
-        })
-        .catch(() => {}) // non-critical
-    }
-
     return () => stop()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -156,7 +191,7 @@ export function InterviewScreen() {
         isMuted={isMuted}
         onToggleMute={toggleMute}
         onStop={handleStop}
-        onManualSubmit={handleUtteranceEnd}
+        onManualSubmit={handleManualSubmit}
       />
     )
   }
@@ -206,19 +241,6 @@ export function InterviewScreen() {
         onToggleMiniPlayer={() => setIsMiniPlayerOpen(!isMiniPlayerOpen)}
       />
 
-      {cvWarning && (
-        <div className="relative z-10 mx-3 mt-1 flex items-center justify-between gap-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-2 text-xs text-amber-300/90">
-          <span>
-            ⚠️ CV not loaded in backend (server may have restarted). Go back to Setup and re-upload your CV for personalized answers.
-          </span>
-          <button
-            className="shrink-0 text-amber-400/60 hover:text-amber-300 transition-colors"
-            onClick={() => setCvWarning(false)}
-          >
-            ✕
-          </button>
-        </div>
-      )}
 
       <div className="flex-1 p-3 overflow-hidden relative z-10">
         <ConversationFeed />
@@ -231,6 +253,8 @@ export function InterviewScreen() {
           audioSource={audioSource}
           isMuted={isMuted}
           onToggleMute={toggleMute}
+          onStop={handleStop}
+          onManualSubmit={handleManualSubmit}
         />
       )}
     </div>
