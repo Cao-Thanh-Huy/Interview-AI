@@ -1,4 +1,11 @@
-import type { CompletionMode, HistoryTurn, SessionMetadata, SessionDetail, UpsertQAResult } from './types'
+import type {
+  CompletionMode,
+  HistoryTurn,
+  SessionMetadata,
+  SessionDetail,
+  UpsertQAResult,
+  SuggestAliasesResult,
+} from './types'
 
 const BASE = '/api'
 
@@ -40,11 +47,39 @@ export async function streamCompletion(
   }
 }
 
-export async function upsertQA(question: string, answer: string): Promise<UpsertQAResult> {
+/**
+ * Upsert Q&A vào knowledge base, kèm optional aliases.
+ */
+export async function upsertQA(
+  question: string,
+  answer: string,
+  aliases?: string[],
+): Promise<UpsertQAResult> {
   const res = await fetch(`${BASE}/knowledge/qa`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question, answer }),
+    body: JSON.stringify({ question, answer, aliases }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+    throw new Error(err.error ?? `HTTP ${res.status}`)
+  }
+  return res.json()
+}
+
+/**
+ * Gọi training-grade alias suggestion pipeline.
+ * Scan toàn bộ KB → Groq generate → collision filter → impact compute.
+ * Trả về SuggestedAlias[] kèm retrieval impact info.
+ */
+export async function suggestAliases(
+  question: string,
+  context?: string,
+): Promise<SuggestAliasesResult> {
+  const res = await fetch(`${BASE}/knowledge/suggest-aliases`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question, context }),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
@@ -75,5 +110,3 @@ export async function translateText(text: string): Promise<string> {
   const data = await res.json()
   return data.translation
 }
-
-

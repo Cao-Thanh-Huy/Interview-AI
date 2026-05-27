@@ -40,7 +40,26 @@ export interface SessionDetail {
 }
 
 export type UpsertQAResult =
-  | { status: 'inserted' }
-  | { status: 'updated' }
+  | { status: 'inserted'; aliases_saved: number }
+  | { status: 'updated'; aliases_saved: number }
   | { status: 'blocked_duplicate' }
   | { status: 'blocked_injection' }
+
+// --- Alias suggestion types ---
+
+/** Nearest neighbor từ KB — dùng cho retrieval impact warning trong UI */
+export interface AliasImpact {
+  phrase: string       // phrase trong KB gần nhất
+  score: number        // cosine similarity (0–1)
+  unitQuestion: string // display question của unit đó
+}
+
+/** Một alias được suggest kèm retrieval impact info */
+export interface SuggestedAlias {
+  phrase: string
+  impact: AliasImpact[]  // top 2 nearest từ OTHER units
+}
+
+export interface SuggestAliasesResult {
+  aliases: SuggestedAlias[]
+}

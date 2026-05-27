@@ -61,7 +61,7 @@ completionRouter.post('/', async (c) => {
     let ragContext = ''
     if (isLocalStoreEnabled()) {
       try {
-        const results = await semanticSearch(transcript, 3)
+        const results = await semanticSearch(transcript, 3, true)  // relaxedGating: training mode cần recall > precision
         if (results.length > 0) {
           ragContext = results
             .map((r) => r.question
