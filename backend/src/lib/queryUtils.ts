@@ -38,6 +38,110 @@ export function buildRetrievalQuery(transcript: string): string {
     .toLowerCase()
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+//  Ambiguity detection — determines if a transcript is too garbled/short to
+//  answer meaningfully without more context.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const QUESTION_WORDS = new Set([
+  'how', 'what', 'why', 'when', 'where', 'who', 'which', 'can', 'could',
+  'do', 'did', 'does', 'is', 'are', 'was', 'were', 'will', 'would',
+  'tell', 'explain', 'describe', 'walk', 'show', 'give', 'talk',
+])
+
+const STOP_WORDS = new Set([
+  'a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+  'of', 'with', 'by', 'from', 'about', 'into', 'through', 'during',
+  'i', 'me', 'my', 'we', 'our', 'you', 'your', 'it', 'its', 'this', 'that',
+  'uh', 'um', 'ah', 'er', 'hmm', 'hm', 'oh', 'so', 'yeah', 'okay', 'right',
+])
+
+/**
+ * Returns true if the transcript is ambiguous and should trigger a
+ * clarification response instead of an LLM answer attempt.
+ *
+ * Logic:
+ *   - If hasHistory=true (follow-up question exists) → only flag if transcript
+ *     is extremely short (< 3 chars) or a pure filler. Short follow-ups like
+ *     "what about Athena?" are valid in context.
+ *   - If hasHistory=false (first question) → flag if:
+ *       • Fewer than 4 meaningful (non-stop, non-filler) words, AND
+ *       • No question word present
+ */
+export function isAmbiguousTranscript(
+  transcript: string,
+  hasHistory: boolean,
+): boolean {
+  const trimmed = transcript.trim()
+
+  // Always flag empty / extremely short strings
+  if (trimmed.length < 6) return true
+
+  const words = trimmed.toLowerCase().split(/\s+/).filter(Boolean)
+
+  // If conversation history exists, be lenient — it's likely a follow-up
+  if (hasHistory) {
+    // Only reject if it's purely filler or nonsense
+    const meaningfulWords = words.filter(w => !STOP_WORDS.has(w) && !FILLER_SET.has(w))
+    return meaningfulWords.length === 0
+  }
+
+  // No history — stricter check
+  const hasQuestionWord = words.some(w => QUESTION_WORDS.has(w))
+  const meaningfulWords = words.filter(w => !STOP_WORDS.has(w) && !FILLER_SET.has(w))
+
+  // Flag if very few meaningful words AND no clear question word
+  return meaningfulWords.length < 4 && !hasQuestionWord
+}
+
+// Clarification responses — rotated randomly for natural feel
+const CLARIFICATION_RESPONSES = [
+  '• Could you repeat that? I didn\'t quite catch it.',
+  '• Sorry, could you rephrase the question? I want to make sure I answer the right thing.',
+  '• I\'m not sure I heard that correctly — could you say that again?',
+  '• Could you clarify what you\'re asking? I want to give you a precise answer.',
+  '• I didn\'t catch that fully — could you repeat or rephrase?',
+]
+
+let _clarIdx = 0
+
+/** Returns a clarification response, rotating through the pool. */
+export function getClarificationResponse(): string {
+  const resp = CLARIFICATION_RESPONSES[_clarIdx % CLARIFICATION_RESPONSES.length]
+  _clarIdx++
+  return resp
+}
+
+/**
+ * Builds an enriched retrieval query for short/vague follow-up questions.
+ * Prepends the current conversation topic so RAG can find relevant context
+ * even when the transcript itself has no keywords.
+ *
+ * Example:
+ *   currentTopic = "how does Snowflake work"
+ *   transcript   = "what about Athena?"
+ *   → enriched   = "snowflake athena"
+ */
+export function buildEnrichedRetrievalQuery(
+  transcript: string,
+  currentTopic: string | null,
+): string {
+  const base = buildRetrievalQuery(transcript)
+
+  if (!currentTopic) return base
+
+  const words = transcript.trim().split(/\s+/).filter(Boolean)
+  const isShortFollowUp = words.length <= 5
+
+  if (isShortFollowUp) {
+    // Prepend topic keywords (strip stop words from topic first)
+    const topicKeywords = buildRetrievalQuery(currentTopic)
+    return `${topicKeywords} ${base}`.trim()
+  }
+
+  return base
+}
+
 /**
  * Prompt injection patterns to detect and neutralise.
  */

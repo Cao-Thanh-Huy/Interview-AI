@@ -3,9 +3,10 @@ import { streamText } from 'hono/streaming'
 import groq, { GROQ_MODEL } from '../lib/groq.js'
 import { buildPrompt, buildRAGPrompt, buildSummarizerPrompt, buildTrainingSuggestionPrompt, type HistoryTurn } from '../lib/prompts.js'
 import { semanticSearch, isLocalStoreEnabled } from '../lib/localStore.js'
-import { isFillerTranscript, buildRetrievalQuery } from '../lib/queryUtils.js'
+import { isFillerTranscript, buildRetrievalQuery, buildEnrichedRetrievalQuery, isAmbiguousTranscript, getClarificationResponse } from '../lib/queryUtils.js'
 import { appendTurn } from '../lib/historyStore.js'
 import { hotMemory } from '../lib/hotMemory.js'
+import { correctASRTranscript, getASRCorrections } from '../lib/asrCorrection.js'
 
 export const completionRouter = new Hono()
 
@@ -50,10 +51,20 @@ completionRouter.post('/', async (c) => {
     mode?: 'copilot' | 'summarizer' | 'training'
   }>()
 
-  const { transcript, context = '', sessionId, history = [], mode = 'copilot' } = body
+  const { transcript: rawTranscript, context = '', sessionId, history = [], mode = 'copilot' } = body
 
-  if (!transcript?.trim()) {
+  if (!rawTranscript?.trim()) {
     return c.json({ error: 'transcript is required' }, 400)
+  }
+
+  // ── ASR Phonetic Correction ──────────────────────────────────────────────
+  // Apply before ALL downstream steps (RAG retrieval + LLM prompt)
+  // so "no flag" → "Snowflake", "data bricks" → "Databricks", etc.
+  const transcript = correctASRTranscript(rawTranscript)
+  if (transcript !== rawTranscript) {
+    const fixes = getASRCorrections(rawTranscript)
+    console.log(`[ASR] Corrected transcript: "${rawTranscript}" → "${transcript}"`)
+    fixes.forEach(f => console.log(`  [ASR]  "${f.from}" → "${f.to}"`))
   }
 
   // Training mode: search local database first — use stored knowledge if found, else generate fresh
@@ -121,25 +132,63 @@ completionRouter.post('/', async (c) => {
 
   // --- Live Interview (copilot) mode ---
   const recentHistory = history.slice(-CONTEXT_WINDOW_TURNS)
+  const hasHistory = recentHistory.length > 0
   let prompt: string
 
-  // Check for filler transcript — skip RAG, use minimal prompt
+  // Check for filler/too-short transcript
   const isFiller = isFillerTranscript(transcript)
 
+  // ── Early Ambiguity Gate (filler path) ──────────────────────────────────
+  // If transcript is filler/too-short AND there's no conversation history,
+  // it's definitely garbled noise — ask for clarification immediately.
+  // If there IS history, a short input like "and also?" could be a valid follow-up.
+  if (isFiller && !hasHistory) {
+    const clarification = getClarificationResponse()
+    console.log(`[Gate] Filler + no history → clarification: "${transcript}"`)
+    return streamText(c, async (stream) => {
+      await stream.write(clarification)
+    })
+  }
+
   // Cập nhật trạng thái cuộc trò chuyện gần nhất vào RAM hotMemory để lưu vết
-  if (recentHistory.length > 0) {
+  if (hasHistory) {
     const historyText = recentHistory.map((t) => `Q: ${t.question}\nA: ${t.answer}`).join('\n')
     hotMemory.setActiveInterviewState(historyText)
   }
 
   if (!isFiller && isLocalStoreEnabled()) {
-    // Local hybrid RAG path
-    const retrievalQuery = buildRetrievalQuery(transcript)
+    // ── Enriched RAG retrieval ──────────────────────────────────────────────
+    // For short follow-ups ("what about Athena?"), prepend the current topic
+    // from hotMemory so RAG can find relevant context even without explicit keywords.
+    const retrievalQuery = buildEnrichedRetrievalQuery(transcript, hotMemory.getCurrentTopic())
+    const isEnriched = retrievalQuery !== buildRetrievalQuery(transcript)
+    console.log(`[RAG] query: "${retrievalQuery}"${isEnriched ? ' (topic-enriched)' : ''}`)
+
     let ragResults: import('../lib/localStore.js').SearchResult[] = []
     try {
       ragResults = await semanticSearch(retrievalQuery, 5)
     } catch (err) {
       console.error('LocalStore search error:', err)
+    }
+
+    // ── Post-RAG Ambiguity Gate ─────────────────────────────────────────────
+    // Trigger clarification when the question doesn't match any known topic.
+    // Two signals must BOTH be true:
+    //   1. No strong RAG match: 0 results OR all results score < MIN_RAG_SCORE
+    //      (weak matches like "seasonal fluctuation" → "freshness SLA" at 0.4 don't count)
+    //   2. Transcript is structurally ambiguous (incoherent, not data-engineering related)
+    //
+    // hasHistory lenient mode: if there's conversation context and RAG found
+    // something (even weak), trust the history → don't ask to repeat.
+    const MIN_RAG_SCORE = 0.52
+    const hasStrongRAGMatch = ragResults.some(r => r.score >= MIN_RAG_SCORE)
+
+    if (!hasStrongRAGMatch && isAmbiguousTranscript(transcript, hasHistory)) {
+      const clarification = getClarificationResponse()
+      console.log(`[Gate] Ambiguous + weak RAG (top score: ${ragResults[0]?.score?.toFixed(3) ?? 'none'}) → clarification: "${transcript}"`)
+      return streamText(c, async (stream) => {
+        await stream.write(clarification)
+      })
     }
 
     if (ragResults.length > 0) {
@@ -165,7 +214,8 @@ completionRouter.post('/', async (c) => {
 
       prompt = buildRAGPrompt(context, transcript, combinedRagContext, recentHistory)
     } else {
-      // Nothing above threshold — dùng Prompt thường kết hợp RAM Hot Memory
+      // RAG miss but not flagged as ambiguous (coherent question, just not in KB)
+      // → let LLM answer from general knowledge + history context
       const ramContext = hotMemory.getCompactContextMarkdown()
       const combinedContext = [context, ramContext].filter(Boolean).join('\n\n')
       prompt = buildPrompt(combinedContext, transcript, recentHistory)
