@@ -53,7 +53,7 @@ tmp/
 backend/data/memory.db-shm
 backend/data/memory.db-wal
 !backend/data/memory.db
-backend/data/memory.db.bak
+*.bak
 backend/data/backups/
 backend/data/history/
 .pids
