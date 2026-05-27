@@ -171,7 +171,7 @@ $beEnv = if ($shareMode -and $lanIp) { @{ SHARE_HOST = $lanIp } } else { @{} }
 $backendProc = Start-NodeHidden `
     -WorkDir  $backendRoot `
     -NodeBin  $tsxCli `
-    -NodeArgs "watch src/index.ts" `
+    -NodeArgs "src/index.ts" `
     -LogFile  "$ROOT\backend.log" `
     -ExtraEnv $beEnv
 

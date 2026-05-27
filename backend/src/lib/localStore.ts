@@ -409,9 +409,11 @@ export async function semanticSearch(query: string, topK = 5, relaxedGating = fa
         finalScore = ftsScore > 0 ? vecScore * 0.65 + ftsScore * 0.35 : vecScore
 
       } else if (vecScore >= RETRIEVAL_THRESHOLD_MID) {
-        // Tier 2: Medium confidence — cần FTS corroboration
-        if (ftsScore === 0) continue  // reject nếu không có FTS overlap
-        finalScore = vecScore * 0.65 + ftsScore * 0.35
+        // Tier 2: Medium confidence — accept directly (vector similarity alone is sufficient)
+        // Paraphrase queries ("give me a quick intro" vs trained "tell me about yourself")
+        // will not have FTS keyword overlap — that is expected and OK.
+        // FTS bonus applied if available, otherwise use vecScore as-is.
+        finalScore = ftsScore > 0 ? vecScore * 0.80 + ftsScore * 0.20 : vecScore
 
       } else if (vecScore >= RETRIEVAL_THRESHOLD_LOW) {
         // Tier 3: Weak confidence — cần keyword overlap trong matched phrase

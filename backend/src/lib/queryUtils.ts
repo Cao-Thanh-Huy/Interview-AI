@@ -22,7 +22,21 @@ export function isFillerTranscript(transcript: string): boolean {
   if (words.length === 0) return true
 
   const fillerCount = words.filter((w) => FILLER_SET.has(w)).length
-  return fillerCount / words.length > 0.65
+  if (fillerCount / words.length > 0.65) return true
+
+  // ── Dangling fragment detection ───────────────────────────────────────────
+  // Catch ASR cut-off mid-sentence: starts with a question/auxiliary verb
+  // but has ≤2 words total (no object/predicate).
+  // Examples: "Do you", "Have you", "Can you", "Are you", "Tell me", "What's your"
+  const DANGLING_STARTERS = new Set([
+    'do', 'did', 'does', 'have', 'has', 'had',
+    'can', 'could', 'will', 'would', 'should', 'shall',
+    'are', 'is', 'was', 'were',
+    'tell', 'show', 'give', 'walk',
+  ])
+  if (words.length <= 2 && DANGLING_STARTERS.has(words[0])) return true
+
+  return false
 }
 
 const FILLER_REGEX = /\b(uh|um|ah|er|hmm?|oh|like|so|well|yeah|yep|ok|okay|right|sure|alright|à|ừm?|ờ|ơ|thì|là|dạ|vâng|ý|kiểu|và|cũng|thế|mà|nhỉ|nhé|đó|thôi)\b/gi
@@ -86,12 +100,12 @@ export function isAmbiguousTranscript(
     return meaningfulWords.length === 0
   }
 
-  // No history — stricter check
+  // No history — stricter check, but still lenient enough for coherent statements
   const hasQuestionWord = words.some(w => QUESTION_WORDS.has(w))
   const meaningfulWords = words.filter(w => !STOP_WORDS.has(w) && !FILLER_SET.has(w))
 
-  // Flag if very few meaningful words AND no clear question word
-  return meaningfulWords.length < 4 && !hasQuestionWord
+  // Flag ONLY if truly empty/noise — 2+ meaningful words = coherent enough to attempt
+  return meaningfulWords.length < 2 && !hasQuestionWord
 }
 
 // Clarification responses — rotated randomly for natural feel
@@ -131,7 +145,20 @@ export function buildEnrichedRetrievalQuery(
   if (!currentTopic) return base
 
   const words = transcript.trim().split(/\s+/).filter(Boolean)
-  const isShortFollowUp = words.length <= 5
+
+  // ── Explicit follow-up detection ──────────────────────────────────────────
+  // Only enrich when the sentence is a genuine short follow-up.
+  // Criteria: ≤3 words AND starts with a follow-up connector word.
+  // This prevents topic pollution when the question is self-contained
+  // (e.g., "Do you know Cortex AI?" or "Now I'm in package five" should NOT
+  //  be enriched with a stale "Snowflake" topic from the previous turn).
+  const FOLLOW_UP_STARTERS = new Set([
+    'what', 'how', 'why', 'and', 'also', 'but', 'then', 'so',
+    'tell', 'explain', 'give', 'show',
+  ])
+
+  const firstWord = words[0]?.toLowerCase() ?? ''
+  const isShortFollowUp = words.length <= 3 && FOLLOW_UP_STARTERS.has(firstWord)
 
   if (isShortFollowUp) {
     // Prepend topic keywords (strip stop words from topic first)

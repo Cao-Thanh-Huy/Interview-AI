@@ -30,7 +30,7 @@ const PHONETIC_MAP: PhoneticEntry[] = [
   // ── Cloud Data Platforms ──────────────────────────────────────────────────
   {
     correct: 'Snowflake',
-    variants: ['snow flake', 'no flag', 'no flake', 'snow flag', 'no lake', 'snow fake'],
+    variants: ['snow flake', 'no flag', 'no flake', 'snow flag', 'no lake', 'snow fake', 'snowflood', 'snow flood', 'snoh flood', 'snow flock', 'no flood'],
   },
   {
     correct: 'Databricks',

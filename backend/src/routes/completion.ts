@@ -51,9 +51,13 @@ completionRouter.post('/', async (c) => {
     mode?: 'copilot' | 'summarizer' | 'training'
   }>()
 
-  const { transcript: rawTranscript, context = '', sessionId, history = [], mode = 'copilot' } = body
+  // Normalise to string — guard against non-string values from frontend
+  const rawTranscript = typeof body.transcript === 'string'
+    ? body.transcript
+    : String(body.transcript ?? '')
+  const { context = '', sessionId, history = [], mode = 'copilot' } = body
 
-  if (!rawTranscript?.trim()) {
+  if (!rawTranscript.trim()) {
     return c.json({ error: 'transcript is required' }, 400)
   }
 
@@ -192,10 +196,15 @@ completionRouter.post('/', async (c) => {
     }
 
     if (ragResults.length > 0) {
-      // Tự động nhận diện và cập nhật Topic hiện tại lên RAM Hot Memory để phục vụ Topic Continuity
+      // Cập nhật Topic hiện tại lên RAM Hot Memory CHỈ KHI RAG match đủ mạnh.
+      // Weak match không nên override topic hiện tại — tránh "Snowflake" topic
+      // persist sang câu hoàn toàn khác chủ đề ("Do you know Cortex AI?")
       const topMatch = ragResults[0]
-      if (topMatch.question) {
+      if (topMatch.question && topMatch.score >= MIN_RAG_SCORE) {
         hotMemory.setCurrentTopic(topMatch.question)
+      } else if (topMatch.score < MIN_RAG_SCORE) {
+        // RAG kéo được kết quả nhưng score thấp → chủ đề mới, clear topic cũ
+        hotMemory.setCurrentTopic(null)
       }
 
       // Trích xuất các tri thức tìm được từ DB
@@ -214,8 +223,17 @@ completionRouter.post('/', async (c) => {
 
       prompt = buildRAGPrompt(context, transcript, combinedRagContext, recentHistory)
     } else {
-      // RAG miss but not flagged as ambiguous (coherent question, just not in KB)
-      // → let LLM answer from general knowledge + history context
+      // RAG miss: 0 results in KB for this question.
+      // If there's NO conversation history → we have zero context to ground an answer.
+      // Returning a hallucinated answer (especially about identity) is worse than asking to clarify.
+      if (!hasHistory && !context?.trim()) {
+        const clarification = getClarificationResponse()
+        console.log(`[Gate] RAG miss + no history + no context → clarification: "${transcript}"`)
+        return streamText(c, async (stream) => {
+          await stream.write(clarification)
+        })
+      }
+      // Has history or explicit context → LLM can use that to attempt a coherent answer
       const ramContext = hotMemory.getCompactContextMarkdown()
       const combinedContext = [context, ramContext].filter(Boolean).join('\n\n')
       prompt = buildPrompt(combinedContext, transcript, recentHistory)

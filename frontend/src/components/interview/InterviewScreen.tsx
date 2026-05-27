@@ -22,6 +22,7 @@ export function InterviewScreen() {
   const turns = useInterviewStore((s) => s.turns)
   const addTurn = useInterviewStore((s) => s.addTurn)
   const appendToTurn = useInterviewStore((s) => s.appendToTurn)
+  const setTurnAnswer = useInterviewStore((s) => s.setTurnAnswer)
   const finalizeTurn = useInterviewStore((s) => s.finalizeTurn)
   const updateTurnTranslation = useInterviewStore((s) => s.updateTurnTranslation)
   const updateTurnQuestion = useInterviewStore((s) => s.updateTurnQuestion)
@@ -89,16 +90,23 @@ export function InterviewScreen() {
         .map((t) => ({ question: t.question, answer: t.answer }))
 
       try {
-        // Reset nội dung AI suggestions trước khi ghi đè dở dang mới
-        useInterviewStore.setState((s) => ({
-          turns: s.turns.map((t) => (t.id === id ? { ...t, answer: '' } : t)),
-        }))
+        // ── Phương án A: Keep old answer, replace on first chunk ──────────────
+        // KHÔNG xóa answer trước. Chunk đầu tiên sẽ replace toàn bộ answer cũ
+        // (atomic swap — không flash trắng). Các chunk sau append bình thường.
+        let isFirstChunk = true
 
         await streamCompletion(
           text,
           context,
           'copilot',
-          (chunk) => appendToTurn(id, chunk),
+          (chunk) => {
+            if (isFirstChunk) {
+              setTurnAnswer(id, chunk)  // atomic replace: xóa cũ + ghi chunk mới
+              isFirstChunk = false
+            } else {
+              appendToTurn(id, chunk)
+            }
+          },
           ctrl.signal,
           sessionId || undefined,
           recentHistory,
@@ -110,7 +118,7 @@ export function InterviewScreen() {
         }
       }
     },
-    [context, sessionId, turns, appendToTurn, updateTurnTranslation],
+    [context, sessionId, turns, appendToTurn, setTurnAnswer, updateTurnTranslation],
   )
 
   // --- Luồng 2: Refinement (Chốt câu hoàn chỉnh & Dịch chính thức) ---
@@ -176,16 +184,23 @@ export function InterviewScreen() {
         .map((t) => ({ question: t.question, answer: t.answer }))
 
       try {
-        // Reset nội dung AI suggestions để chuẩn bị ghi gợi ý chính thức tối ưu nhất
-        useInterviewStore.setState((s) => ({
-          turns: s.turns.map((t) => (t.id === id ? { ...t, answer: '' } : t)),
-        }))
+        // ── Phương án A: Keep old answer, replace on first chunk ──────────────
+        // KHÔNG xóa answer trước. Chunk đầu tiên replace toàn bộ answer cũ
+        // (atomic swap — không flash trắng). Các chunk sau append bình thường.
+        let isFirstChunk = true
 
         await streamCompletion(
           text,
           context,
           'copilot',
-          (chunk) => appendToTurn(id, chunk),
+          (chunk) => {
+            if (isFirstChunk) {
+              setTurnAnswer(id, chunk)  // atomic replace
+              isFirstChunk = false
+            } else {
+              appendToTurn(id, chunk)
+            }
+          },
           ctrl.signal,
           sessionId || undefined,
           recentHistory,
