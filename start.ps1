@@ -45,6 +45,19 @@ if (Test-Path $PID_FILE) {
     Start-Sleep -Milliseconds 500
 }
 
+# Nuclear pre-start cleanup: kill ALL node.exe + any port holders
+# This ensures clean state even after crash/zombie scenarios
+foreach ($port in @(3001, 5173)) {
+    $portPid = (netstat -ano 2>$null | Select-String ":$port\s" | Select-String "LISTENING" | ForEach-Object {
+        ($_ -split "\s+")[-1]
+    } | Select-Object -First 1)
+    if ($portPid -and $portPid -match "^\d+$") {
+        taskkill /F /PID ([int]$portPid) 2>&1 | Out-Null
+    }
+}
+Start-Sleep -Milliseconds 300
+
+
 # Dynamically detect active package manager (pnpm, yarn, or npm)
 $pkgManager = "npm"
 if (Get-Command pnpm -ErrorAction SilentlyContinue) {
@@ -140,8 +153,6 @@ function Start-NodeHidden {
     $envLines = ($ExtraEnv.GetEnumerator() | ForEach-Object { "`$env:$($_.Key)='$($_.Value)'" }) -join '; '
     if ($envLines) { $envLines += '; ' }
 
-    # Use '>' (overwrite) for LogFile since we want fresh logs per start session.
-    # '2>&1' merges stderr into stdout so everything goes to the log.
     $psCmd   = "${envLines}`$env:NODE_OPTIONS='--use-system-ca'; node `"$NodeBin`" $NodeArgs *> `"$LogFile`""
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($psCmd))
 
@@ -151,20 +162,17 @@ function Start-NodeHidden {
     $psi.WorkingDirectory       = $WorkDir
     $psi.UseShellExecute        = $false
     $psi.CreateNoWindow         = $true
-    # Redirect stdout/stderr so node output flows through this pipe to the log file.
-    # The wrapper stays alive as long as node is alive because ReadToEndAsync()
-    # keeps the pipe open — the wrapper will only exit when node exits.
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError  = $true
+    $psi.RedirectStandardOutput = $false
+    $psi.RedirectStandardError  = $false
 
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $psi
     $null = $p.Start()
-    # Drain async: pipes output to /dev/null but keeps wrapper alive as long as node runs
-    $null = $p.StandardOutput.ReadToEndAsync()
-    $null = $p.StandardError.ReadToEndAsync()
     return $p
 }
+
+
+
 
 # --- Start Backend ---
 $beEnv = if ($shareMode -and $lanIp) { @{ SHARE_HOST = $lanIp } } else { @{} }

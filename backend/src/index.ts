@@ -75,6 +75,38 @@ warmupSystem().catch((err) => console.error('System warmup error:', err))
 const port = Number(process.env.PORT ?? 3001)
 console.log(`🚀 Backend running on http://localhost:${port}`)
 
-serve({ fetch: app.fetch, port })
+// ── EADDRINUSE retry wrapper ─────────────────────────────────────────────────
+// tsx watch sometimes restarts before the OS releases the port from the old
+// process. Retry up to 5 times with 1.5s delay instead of crashing hard.
+function startServer(retries = 5): void {
+  try {
+    const server = serve({ fetch: app.fetch, port })
 
+    // @hono/node-server returns the underlying http.Server — attach error handler
+    const s = server as unknown as import('node:http').Server
+    s.on?.('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE') {
+        if (retries > 0) {
+          console.warn(`⚠️  Port ${port} still in use, retrying in 1.5s... (${retries} retries left)`)
+          s.close?.()
+          setTimeout(() => startServer(retries - 1), 1500)
+        } else {
+          console.error(`❌ Port ${port} still in use after all retries. Kill the process manually and restart.`)
+          process.exit(1)
+        }
+      } else {
+        throw err
+      }
+    })
+  } catch (err: any) {
+    // Synchronous EADDRINUSE (some environments throw instead of emitting)
+    if (err?.code === 'EADDRINUSE' && retries > 0) {
+      console.warn(`⚠️  Port ${port} still in use, retrying in 1.5s... (${retries} retries left)`)
+      setTimeout(() => startServer(retries - 1), 1500)
+    } else {
+      throw err
+    }
+  }
+}
 
+startServer()

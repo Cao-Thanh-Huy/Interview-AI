@@ -18,16 +18,14 @@ export function isFillerTranscript(transcript: string): boolean {
   const trimmed = transcript.trim()
   if (trimmed.length < 15) return true
 
-  const words = trimmed.toLowerCase().split(/\s+/).filter(Boolean)
+  const words = trimmed.toLowerCase().replace(/[?.!,]+$/, '').split(/\s+/).filter(Boolean)
   if (words.length === 0) return true
 
   const fillerCount = words.filter((w) => FILLER_SET.has(w)).length
   if (fillerCount / words.length > 0.65) return true
 
-  // ── Dangling fragment detection ───────────────────────────────────────────
-  // Catch ASR cut-off mid-sentence: starts with a question/auxiliary verb
-  // but has ≤2 words total (no object/predicate).
-  // Examples: "Do you", "Have you", "Can you", "Are you", "Tell me", "What's your"
+  // ── Dangling fragment detection: starts with aux verb, ≤2 words ───────────
+  // Examples: "Do you", "Have you", "Can you", "Are you"
   const DANGLING_STARTERS = new Set([
     'do', 'did', 'does', 'have', 'has', 'had',
     'can', 'could', 'will', 'would', 'should', 'shall',
@@ -35,6 +33,19 @@ export function isFillerTranscript(transcript: string): boolean {
     'tell', 'show', 'give', 'walk',
   ])
   if (words.length <= 2 && DANGLING_STARTERS.has(words[0])) return true
+
+  // ── Trailing preposition detection ────────────────────────────────────────
+  // ASR frequently cuts off mid-sentence, leaving a dangling preposition at end.
+  // "How to work on" / "Okay. How to work on" / "Now I'm working on"
+  // A sentence ending with a preposition = incomplete thought = clarify.
+  const TRAILING_PREPS = new Set([
+    'on', 'in', 'at', 'to', 'for', 'with', 'by', 'of', 'from',
+    'about', 'through', 'into', 'onto', 'over', 'under',
+    'between', 'after', 'before', 'during', 'within', 'without',
+    'and', 'or', 'but', 'so', 'because', 'that', 'which', 'the', 'a', 'an',
+  ])
+  const lastWord = words[words.length - 1]
+  if (TRAILING_PREPS.has(lastWord)) return true
 
   return false
 }
@@ -95,9 +106,19 @@ export function isAmbiguousTranscript(
 
   // If conversation history exists, be lenient — it's likely a follow-up
   if (hasHistory) {
-    // Only reject if it's purely filler or nonsense
     const meaningfulWords = words.filter(w => !STOP_WORDS.has(w) && !FILLER_SET.has(w))
-    return meaningfulWords.length === 0
+    const hasQuestionWord = words.some(w => QUESTION_WORDS.has(w))
+
+    // Pure filler/empty → always ambiguous
+    if (meaningfulWords.length === 0) return true
+
+    // Câu không có question word VÀ ít hơn 3 meaningful words = garbled statement
+    // "Wow. What a the next day." → ["next","day"] = 2 words, no question word → ambiguous
+    // "How did MinIO work?" → has "how" → NOT ambiguous (question word present)
+    // "Yes, back to Snowflake" → ["yes","back","snowflake"] = 3 words → NOT ambiguous
+    if (!hasQuestionWord && meaningfulWords.length < 3) return true
+
+    return false
   }
 
   // No history — stricter check, but still lenient enough for coherent statements

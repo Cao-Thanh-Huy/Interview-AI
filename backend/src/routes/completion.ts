@@ -207,6 +207,23 @@ completionRouter.post('/', async (c) => {
         hotMemory.setCurrentTopic(null)
       }
 
+      // ── Secondary ambiguity gate (trong RAG hit path) ───────────────────────
+      // Vấn đề: câu garbled ("Wow. What a the next day.") vẫn được trả lời vì
+      // RAG hit topic (Lakehouse) → LLM bịa chi tiết timeline không có trong KB.
+      //
+      // Fix: nếu câu vừa garbled (isAmbiguousTranscript) vừa RAG score chưa đủ
+      // HIGH_CONFIDENCE (0.72), prefer clarification thay vì hallucinate.
+      // Score >= 0.72 = câu hỏi rõ ràng khớp tốt → trust it, answer it.
+      // Score < 0.72 nhưng ambiguous = câu garbled kéo được topic ngẫu nhiên.
+      const HIGH_CONFIDENCE_SCORE = 0.72
+      if (topMatch.score < HIGH_CONFIDENCE_SCORE && isAmbiguousTranscript(transcript, hasHistory)) {
+        const clarification = getClarificationResponse()
+        console.log(`[Gate] RAG hit but garbled (score: ${topMatch.score.toFixed(3)} < ${HIGH_CONFIDENCE_SCORE}) → clarification: "${transcript}"`)
+        return streamText(c, async (stream) => {
+          await stream.write(clarification)
+        })
+      }
+
       // Trích xuất các tri thức tìm được từ DB
       const dbRagText = ragResults
         .map((r) => {
