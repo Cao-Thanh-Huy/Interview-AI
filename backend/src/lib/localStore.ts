@@ -352,9 +352,10 @@ export async function semanticSearch(query: string, topK = 5, relaxedGating = fa
         if (ftsScore > prev) ftsUnitScores.set(row.unit_id, ftsScore)
       }
 
-      // FTS first-hit shortcut: nếu top score >= 0.88 → trust hoàn toàn
+      // FTS first-hit shortcut — ONLY for live mode
+      // Training mode (relaxedGating) luôn đi qua full semantic scan để recall cao hơn
       const topFtsUnit = [...ftsUnitScores.entries()].sort((a, b) => b[1] - a[1])[0]
-      if (topFtsUnit && topFtsUnit[1] >= 0.88) {
+      if (!relaxedGating && topFtsUnit && topFtsUnit[1] >= 0.88) {
         console.log(`⚡ localStore: FTS First Hit (unit=${topFtsUnit[0]}, score=${topFtsUnit[1].toFixed(3)}) — skipping embedding`)
         return _buildResultsFromUnitIds(
           [...ftsUnitScores.entries()]
@@ -398,9 +399,9 @@ export async function semanticSearch(query: string, topK = 5, relaxedGating = fa
       let finalScore: number
 
       if (relaxedGating) {
-        // Training mode: accept anything >= RETRIEVAL_THRESHOLD_LOW, no FTS/keyword gate required
-        // Precision less critical here — user will review the draft answer anyway
-        if (vecScore < RETRIEVAL_THRESHOLD_LOW) continue
+        // Training mode: accept score >= 0.45 (thấp hơn live mode 0.58)
+        // Data nhỏ, không realtime → ưu tiên recall hơn precision
+        if (vecScore < 0.45) continue
         finalScore = ftsScore > 0 ? vecScore * 0.65 + ftsScore * 0.35 : vecScore
 
       } else if (vecScore >= RETRIEVAL_THRESHOLD_HIGH) {

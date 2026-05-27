@@ -75,16 +75,37 @@ knowledgeRouter.post('/suggest-aliases', async (c) => {
   const cleanQ = sanitizeInput(question.trim())
 
   // ── Step 1: Full KB Context Scan ─────────────────────────────
-  // Quét TOÀN BỘ vectors (không giới hạn topK) để Groq biết KB hiện có
-  let nearbyPhrases: string[] = []
+  // Quét TOÀN BỘ vectors, group by unit → Groq biết KB đang cover topic nào + alias nào đã có
+  type KBUnit = { question: string; phrases: string[]; topScore: number }
+  const kbCoverage: KBUnit[] = []
+  let allFlatPhrases: string[] = []  // dùng cho collision check sau
+
   try {
     const queryVec = await embedQueryCached(cleanQ)
     const allResults = await scanAllVectors(queryVec)
-    // Thu thập phrases có similarity > 0.50 (bức tranh đầy đủ KB)
-    nearbyPhrases = allResults
+
+    // Group by unit_id — giữ best score per unit
+    const unitMap = new Map<string, KBUnit>()
+    for (const r of allResults) {
+      if (!unitMap.has(r.unit_id)) {
+        unitMap.set(r.unit_id, { question: r.question || r.phrase, phrases: [], topScore: r.score })
+      }
+      unitMap.get(r.unit_id)!.phrases.push(r.phrase)
+    }
+
+    // Lấy top 8 units có score > 0.40 (low bar — cần bức tranh đầy đủ KB)
+    const sorted = [...unitMap.values()]
+      .sort((a, b) => b.topScore - a.topScore)
+      .filter((u) => u.topScore > 0.40)
+      .slice(0, 8)
+
+    kbCoverage.push(...sorted)
+    allFlatPhrases = allResults
       .filter((r) => r.score > 0.50)
       .map((r) => r.phrase)
-      .slice(0, 20)  // max 20 để prompt không quá dài
+      .slice(0, 30)
+
+    console.log(`📚 suggest-aliases KB scan: ${unitMap.size} units found, ${kbCoverage.length} relevant (score>0.40)`)
   } catch (err) {
     console.warn('KB context scan failed (non-fatal):', err)
   }
@@ -92,14 +113,20 @@ knowledgeRouter.post('/suggest-aliases', async (c) => {
   // ── Step 2: Groq Alias Generation ────────────────────────────
   let rawAliases: string[] = []
   try {
-    const nearbyBlock = nearbyPhrases.length > 0
-      ? `\nExisting phrases in knowledge base (generate aliases DISTINCT from these):\n${nearbyPhrases.map((p) => `- "${p}"`).join('\n')}\n`
+    // Build rich KB context block — Groq biết bạn đã có gì, suggest alias fill gaps
+    const kbBlock = kbCoverage.length > 0
+      ? `\nYour knowledge base already covers these topics (with existing phrasings):\n${
+          kbCoverage.map((u) => {
+            const existingPhrases = u.phrases.slice(0, 4).map((p) => `  • "${p}"`).join('\n')
+            return `- Topic: "${u.question}"\n${existingPhrases}`
+          }).join('\n')
+        }\n\nGenerate aliases that are DISTINCT from ALL phrases listed above.\n`
       : ''
 
     const prompt = `You are a training data curator for an AI interview assistant.
 
 Given this interview question: "${cleanQ}"
-${nearbyBlock}
+${kbBlock}
 Generate 5 SEMANTICALLY DISTINCT variations of this question covering these different styles:
 1. Formal/professional phrasing
 2. Casual/conversational phrasing
@@ -111,7 +138,7 @@ Requirements:
 - Genuinely different sentence structures and wording
 - Same underlying intent as the original question
 - NOT near-duplicates of each other
-- NOT similar to the existing phrases listed above
+- NOT similar to ANY existing phrases listed above
 - Do NOT generate greetings or off-topic questions
 
 Output ONLY a valid JSON array of exactly 5 strings. No explanation, no markdown, no code block.`
