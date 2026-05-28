@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, CSSProperties } from 'react'
 import { useDeepgram } from '@/hooks/useDeepgram'
-import { streamCompletion } from '@/lib/api'
+import { streamCompletion, translateText } from '@/lib/api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface SessionData {
@@ -11,7 +11,9 @@ interface SessionData {
 interface Turn {
   id: string
   question: string
+  questionTranslation?: string
   bullets: string[]
+  bulletTranslation?: string[]  // Vietnamese version of bullets
   isGenerating: boolean
 }
 
@@ -46,11 +48,29 @@ function AudioBars({ level }: { level: number }) {
 }
 
 // ─── Single turn card ─────────────────────────────────────────────────────────
-function TurnCard({ turn, isLatest }: { turn: Turn; isLatest: boolean }) {
+function TurnCard({ turn, isLatest, onTranslateBullets }: { turn: Turn; isLatest: boolean; onTranslateBullets: (id: string) => void }) {
+  const [showVietnamese, setShowVietnamese] = useState(false)
+
+  const handleToggle = useCallback(() => {
+    if (!showVietnamese && !turn.bulletTranslation) {
+      onTranslateBullets(turn.id)
+    }
+    setShowVietnamese(v => !v)
+  }, [showVietnamese, turn.bulletTranslation, turn.id, onTranslateBullets])
+
+  const displayBullets = showVietnamese && turn.bulletTranslation ? turn.bulletTranslation : turn.bullets
+
   return (
     <div className={`hub-turn${isLatest ? ' hub-turn--latest' : ''}`}>
-      {/* Question */}
+      {/* Question — same size as bullets, scales with A-/A+ */}
       <div className="hub-q">{turn.question}</div>
+
+      {/* Question translation — 2px smaller than question, scales with A-/A+ */}
+      {turn.questionTranslation && (
+        <div className="hub-q-translation" style={{ fontSize: 'calc(var(--font-size, 13px) - 2px)', fontStyle: 'italic', marginBottom: 4, paddingLeft: 2 }}>
+          🇻🇳 {turn.questionTranslation}
+        </div>
+      )}
 
       {/* Bullets or generating skeleton */}
       {turn.isGenerating && turn.bullets.length === 0 ? (
@@ -59,19 +79,46 @@ function TurnCard({ turn, isLatest }: { turn: Turn; isLatest: boolean }) {
           Analyzing…
         </div>
       ) : (
-        <div className="hub-bullets">
-          {turn.bullets.map((b, i) => (
-            <div key={i} className="hub-bullet" style={{ animationDelay: `${i * 50}ms` }}>
-              <span className="bullet-dot">•</span>
-              <span className="bullet-text">{b}</span>
-            </div>
-          ))}
-          {turn.isGenerating && (
-            <div className="hub-bullet hub-bullet--streaming">
-              <span className="bullet-dot" style={{ opacity: 0.4 }}>•</span>
-              <span className="streaming-cursor" />
-            </div>
+        <div style={{ position: 'relative' }}>
+          {/* Translate toggle — top-right corner, icon only with tooltip */}
+          {!turn.isGenerating && turn.bullets.length > 0 && (
+            <button
+              onClick={handleToggle}
+              style={{
+                position: 'absolute', top: 0, right: 0,
+                padding: '3px 5px',
+                borderRadius: 4,
+                border: '1px solid',
+                borderColor: showVietnamese ? 'rgba(99,102,241,0.7)' : 'rgba(255,255,255,0.18)',
+                background: showVietnamese ? 'rgba(99,102,241,0.2)' : 'rgba(255,255,255,0.04)',
+                color: showVietnamese ? '#a5b4fc' : 'rgba(255,255,255,0.55)',
+                cursor: 'pointer',
+                display: 'flex', alignItems: 'center',
+                lineHeight: 1,
+              }}
+              title={showVietnamese ? 'Xem tiếng Anh' : 'Dịch sang tiếng Việt'}
+            >
+              {/* Languages icon — icon only, no label */}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m5 8 6 6" /><path d="m4 14 6-6 2-3" /><path d="M2 5h12" /><path d="M7 2h1" />
+                <path d="m22 22-5-10-5 10" /><path d="M14 18h6" />
+              </svg>
+            </button>
           )}
+          <div className="hub-bullets" style={{ paddingRight: !turn.isGenerating && turn.bullets.length > 0 ? 36 : 0 }}>
+            {displayBullets.map((b, i) => (
+              <div key={i} className="hub-bullet" style={{ animationDelay: `${i * 50}ms` }}>
+                <span className="bullet-dot">•</span>
+                <span className="bullet-text">{b}</span>
+              </div>
+            ))}
+            {turn.isGenerating && (
+              <div className="hub-bullet hub-bullet--streaming">
+                <span className="bullet-dot" style={{ opacity: 0.4 }}>•</span>
+                <span className="streaming-cursor" />
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -137,6 +184,10 @@ export function OverlayApp() {
     const id = Date.now().toString()
     activeTurnId.current = id
     setTurns(prev => [...prev, { id, question, bullets: [], isGenerating: true }].slice(-10))
+    // Translate question in background
+    translateText(question)
+      .then((vn) => setTurns(prev => prev.map(t => t.id === id ? { ...t, questionTranslation: vn } : t)))
+      .catch(() => {})
     return id
   }, [])
 
@@ -151,6 +202,18 @@ export function OverlayApp() {
       t.id === id ? { ...t, isGenerating: false } : t
     ))
   }, [])
+
+  const translateBullets = useCallback((id: string) => {
+    const turn = turns.find(t => t.id === id)
+    if (!turn || turn.bulletTranslation) return
+    const fullText = turn.bullets.join('\n')
+    translateText(fullText)
+      .then((vn) => {
+        const lines = vn.split('\n').map(l => l.trim().replace(/^[-*•]\s*/, '').replace(/^\d+\.\s*/, '')).filter(Boolean)
+        setTurns(prev => prev.map(t => t.id === id ? { ...t, bulletTranslation: lines } : t))
+      })
+      .catch(() => {})
+  }, [turns])
 
   // ── Transcript handler — show live speech ──────────────────────────────────
   const handleTranscript = useCallback((text: string) => {
@@ -384,6 +447,7 @@ export function OverlayApp() {
               key={turn.id}
               turn={turn}
               isLatest={i === turns.length - 1}
+              onTranslateBullets={translateBullets}
             />
           ))}
 

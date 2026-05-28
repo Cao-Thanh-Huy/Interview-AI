@@ -234,6 +234,16 @@ body {
   padding-right: 16px; /* avoid resize handle */
 }
 
+/* Question translation line (dark theme default) */
+.hub-q-translation {
+  color: rgba(180, 195, 225, 0.42);
+  margin-bottom: 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 16px;
+}
+
 /* Bullets container */
 .hub-bullets {
   display: flex;
@@ -385,6 +395,7 @@ body {
 .hub-theme--light .hub-turn         { border-left-color: rgba(0, 0, 0, 0.08); }
 .hub-theme--light .hub-turn--latest { border-left-color: rgba(82, 84, 204, 0.55); }
 .hub-theme--light .hub-q            { color: rgba(60, 75, 110, 0.60); }
+.hub-theme--light .hub-q-translation { color: rgba(50, 65, 110, 0.52); }
 .hub-theme--light .bullet-text      { color: #1e2030; }
 .hub-theme--light .bullet-dot       { color: #5254cc; }
 
