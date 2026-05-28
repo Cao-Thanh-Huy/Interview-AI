@@ -1,11 +1,18 @@
 import './loadenv.js'
 import { serve } from '@hono/node-server'
+import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { completionRouter } from './routes/completion.js'
 import { deepgramRouter } from './routes/deepgram.js'
 import { knowledgeRouter } from './routes/knowledge.js'
+import { licenseRouter } from './routes/license.js'
+import { settingsRouter } from './routes/settings.js'
+import { licenseGuard, getLicenseStatus } from './middleware/licenseGuard.js'
+import { getHWID } from './lib/license.js'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 
 const app = new Hono()
 
@@ -27,13 +34,46 @@ app.use(
   }),
 )
 
+// ── License guard: chặn /api/* nếu chưa kích hoạt (trừ /api/license/*) ──────
+app.use('/api/*', licenseGuard)
+
+app.route('/api/license', licenseRouter)     // luôn public — UI kích hoạt
 app.route('/api/completion', completionRouter)
 app.route('/api/deepgram', deepgramRouter)
 app.route('/api/knowledge', knowledgeRouter)
+app.route('/api/settings', settingsRouter)   // public — không cần license
 
 // History routes are sub-routes of the knowledge router: /api/knowledge/history[/:sessionId]
 
 app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }))
+
+// ── Hiển thị trạng thái license khi khởi động ────────────────────────────────
+{
+  const ls = getLicenseStatus()
+  if (!ls.valid) {
+    console.log('━'.repeat(60))
+    console.log('⚠️   PHẦN MỀM CHƯA ĐƯỢC KÍCH HOẠT')
+    console.log(`     Mã máy (HWID): ${getHWID()}`)
+    console.log('     → Mở trình duyệt tại http://localhost:3001')
+    console.log('     → Nhập License Key để kích hoạt phần mềm.')
+    console.log('━'.repeat(60))
+  } else {
+    console.log(`✅ License hợp lệ — Hết hạn: ${ls.expiresAt?.toLocaleDateString('vi-VN')}`)
+  }
+}
+
+// ── Serve React frontend (chỉ active khi đóng gói exe, không ảnh hưởng dev) ─────
+// Production: cwd=Release_Package/, frontend is at cwd/app/frontend-dist/
+// Dev:        cwd=backend/, frontend is at cwd/../frontend/dist (not served by backend)
+const possibleFrontendPaths = [
+  join(process.cwd(), 'app', 'frontend-dist'),   // production (Release_Package/app/frontend-dist)
+  join(process.cwd(), 'frontend-dist'),           // legacy / alternate layout
+]
+const frontendDistPath = possibleFrontendPaths.find(p => existsSync(p))
+if (frontendDistPath) {
+  app.use('/*', serveStatic({ root: frontendDistPath }))
+  console.log(`🌐 Frontend static files served from ${frontendDistPath}`)
+}
 
 import groq, { GROQ_MODEL } from './lib/groq.js'
 import { semanticSearch } from './lib/localStore.js'

@@ -1,19 +1,21 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Zap, Mic, Dumbbell, History, BrainCircuit } from 'lucide-react'
+import { Zap, Mic, Dumbbell, History, BrainCircuit, Settings } from 'lucide-react'
 import { TrainingPanel } from './TrainingPanel'
 import { HistoryReviewPanel } from './HistoryReviewPanel'
 import { MockInterviewPanel } from './MockInterviewPanel'
 import { useInterviewStore } from '@/store/useInterviewStore'
 import { cn } from '@/lib/utils'
+import { SettingsPanel } from '@/components/activation/SettingsPanel'
 
-type Tab = 'setup' | 'training' | 'history' | 'mock'
+type Tab = 'setup' | 'training' | 'history' | 'mock' | 'settings'
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
-  { id: 'setup', label: 'Setup Session', icon: <Zap className="w-3.5 h-3.5" /> },
+  { id: 'setup',    label: 'Setup Session',         icon: <Zap className="w-3.5 h-3.5" /> },
   { id: 'training', label: 'Pre-Interview Training', icon: <Dumbbell className="w-3.5 h-3.5" /> },
-  { id: 'history', label: 'Interview History', icon: <History className="w-3.5 h-3.5" /> },
-  { id: 'mock', label: 'Mock Interview', icon: <BrainCircuit className="w-3.5 h-3.5" /> },
+  { id: 'history',  label: 'Interview History',      icon: <History className="w-3.5 h-3.5" /> },
+  { id: 'mock',     label: 'Mock Interview',          icon: <BrainCircuit className="w-3.5 h-3.5" /> },
+  { id: 'settings', label: 'Settings',               icon: <Settings className="w-3.5 h-3.5" /> },
 ]
 
 export function SetupScreen() {
@@ -149,6 +151,9 @@ export function SetupScreen() {
 
           {/* Tab 4: Mock Interview */}
           {activeTab === 'mock' && <MockInterviewPanel />}
+
+          {/* Tab 5: Settings */}
+          {activeTab === 'settings' && <SettingsPanel />}
         </div>
 
         {/* Hint */}

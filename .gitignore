@@ -61,3 +61,14 @@ temp/
 
 # ── pdf-parse test stub (generated at runtime) ────────────
 backend/test/
+
+# ── Production build artifacts ────────────────────────────
+backend/dist-pkg/
+backend/dist-cjs/
+Release_Package/
+installer/output/
+release_out.txt
+release_err.txt
+
+# ── License key (không commit key thật) ───────────────────
+license.key

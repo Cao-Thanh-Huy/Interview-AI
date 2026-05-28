@@ -1,12 +1,11 @@
 import Database from 'better-sqlite3'
 import path from 'node:path'
 import fs from 'node:fs'
-import { fileURLToPath } from 'node:url'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-
-const DB_DIR = path.resolve(__dirname, '..', '..', 'data')
+// Data directory: always relative to process.cwd()
+//   Dev:        npm run dev from backend/  → cwd = backend/ → data = backend/data/
+//   Production: VBS launcher sets cwd = {install_dir} → data = {install_dir}/data/
+const DB_DIR  = path.resolve(process.cwd(), 'data')
 const DB_PATH = path.join(DB_DIR, 'memory.db')
 
 if (!fs.existsSync(DB_DIR)) {
