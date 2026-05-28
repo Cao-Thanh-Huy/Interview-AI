@@ -14,7 +14,7 @@ export type AudioSource = 'system' | 'microphone' | null
 
 export type AppPhase = 'setup' | 'interview'
 
-export type CompletionMode = 'copilot' | 'summarizer' | 'training'
+export type CompletionMode = 'copilot' | 'summarizer' | 'training' | 'interviewer' | 'mock-scoring'
 
 export interface HistoryTurn {
   question: string
@@ -62,4 +62,27 @@ export interface SuggestedAlias {
 
 export interface SuggestAliasesResult {
   aliases: SuggestedAlias[]
+}
+
+// ── Mock Interview types ─────────────────────────────────────────────────────────────────
+
+export type MockTurnPhase =
+  | 'asking'       // AI is generating the question (streaming)
+  | 'suggesting'   // AI is generating the suggestion hint (streaming, parallel with TTS)
+  | 'listening'    // Waiting for user to speak
+  | 'recording'    // Deepgram is capturing user's answer
+  | 'scoring'      // AI is scoring the answer (streaming)
+  | 'done'         // Turn complete, ready for next question
+
+export interface MockTurn {
+  id: string
+  index: number               // Question number (1-based)
+  question: string            // AI interviewer question
+  suggestion: string          // AI model answer hint (shown before user answers)
+  isSuggestionStreaming: boolean
+  userTranscript: string      // Live transcript while recording
+  userAnswer: string          // Finalized user answer
+  score: string               // AI scoring result
+  isScoringStreaming: boolean
+  phase: MockTurnPhase
 }

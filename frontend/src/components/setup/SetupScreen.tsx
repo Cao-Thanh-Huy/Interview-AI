@@ -1,17 +1,19 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Zap, Mic, Dumbbell, History } from 'lucide-react'
+import { Zap, Mic, Dumbbell, History, BrainCircuit } from 'lucide-react'
 import { TrainingPanel } from './TrainingPanel'
 import { HistoryReviewPanel } from './HistoryReviewPanel'
+import { MockInterviewPanel } from './MockInterviewPanel'
 import { useInterviewStore } from '@/store/useInterviewStore'
 import { cn } from '@/lib/utils'
 
-type Tab = 'setup' | 'training' | 'history'
+type Tab = 'setup' | 'training' | 'history' | 'mock'
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'setup', label: 'Setup Session', icon: <Zap className="w-3.5 h-3.5" /> },
   { id: 'training', label: 'Pre-Interview Training', icon: <Dumbbell className="w-3.5 h-3.5" /> },
   { id: 'history', label: 'Interview History', icon: <History className="w-3.5 h-3.5" /> },
+  { id: 'mock', label: 'Mock Interview', icon: <BrainCircuit className="w-3.5 h-3.5" /> },
 ]
 
 export function SetupScreen() {
@@ -144,6 +146,9 @@ export function SetupScreen() {
 
           {/* Tab 3: Interview History & Review */}
           {activeTab === 'history' && <HistoryReviewPanel />}
+
+          {/* Tab 4: Mock Interview */}
+          {activeTab === 'mock' && <MockInterviewPanel />}
         </div>
 
         {/* Hint */}

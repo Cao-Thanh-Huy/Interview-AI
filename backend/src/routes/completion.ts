@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { streamText } from 'hono/streaming'
 import groq, { GROQ_MODEL } from '../lib/groq.js'
-import { buildPrompt, buildRAGPrompt, buildSummarizerPrompt, buildTrainingSuggestionPrompt, type HistoryTurn } from '../lib/prompts.js'
+import { buildPrompt, buildRAGPrompt, buildSummarizerPrompt, buildTrainingSuggestionPrompt, buildInterviewerQuestionPrompt, buildMockScoringPrompt, type HistoryTurn } from '../lib/prompts.js'
 import { semanticSearch, isLocalStoreEnabled } from '../lib/localStore.js'
 import { isFillerTranscript, buildRetrievalQuery, buildEnrichedRetrievalQuery, isAmbiguousTranscript, getClarificationResponse } from '../lib/queryUtils.js'
 import { appendTurn } from '../lib/historyStore.js'
@@ -48,7 +48,10 @@ completionRouter.post('/', async (c) => {
     context?: string
     sessionId?: string
     history?: HistoryTurn[]
-    mode?: 'copilot' | 'summarizer' | 'training'
+    mode?: 'copilot' | 'summarizer' | 'training' | 'interviewer' | 'mock-scoring'
+    // mock-scoring extras
+    suggestion?: string
+    userAnswer?: string
   }>()
 
   // Normalise to string — guard against non-string values from frontend
@@ -69,6 +72,83 @@ completionRouter.post('/', async (c) => {
     const fixes = getASRCorrections(rawTranscript)
     console.log(`[ASR] Corrected transcript: "${rawTranscript}" → "${transcript}"`)
     fixes.forEach(f => console.log(`  [ASR]  "${f.from}" → "${f.to}"`))
+  }
+
+  // ── Mock Interview: AI generates the next interview question ────────────────
+  if (mode === 'interviewer') {
+    let kbContext = ''
+    // 30% chance: pull a relevant topic from KB to base the question on
+    if (isLocalStoreEnabled() && Math.random() < 0.3) {
+      try {
+        // Use a broad random query to surface diverse KB topics
+        const queries = [
+          'data pipeline architecture',
+          'SQL performance optimization',
+          'cloud data warehouse',
+          'ETL processing',
+          'streaming data',
+          'distributed systems',
+          'database design',
+        ]
+        const randomQuery = queries[Math.floor(Math.random() * queries.length)]
+        const kbResults = await semanticSearch(randomQuery, 3, true)
+        if (kbResults.length > 0) {
+          kbContext = kbResults
+            .map((r) => r.question ? `Topic: ${r.question}` : '')
+            .filter(Boolean)
+            .join('\n')
+        }
+      } catch (err) {
+        console.warn('[Mock] KB search error:', err)
+      }
+    }
+
+    const prompt = buildInterviewerQuestionPrompt(context, history, kbContext)
+    let groqStream
+    try {
+      groqStream = await groq.chat.completions.create({
+        messages: [{ role: 'user', content: prompt }],
+        model: GROQ_MODEL,
+        temperature: 0.85,
+        max_tokens: 80,
+        stream: true,
+      })
+    } catch (err) {
+      console.error('Groq API error (interviewer):', err)
+      return c.json({ error: 'AI service temporarily unavailable. Please try again.' }, 503)
+    }
+    return streamText(c, async (stream) => {
+      for await (const chunk of groqStream) {
+        const content = chunk.choices[0]?.delta?.content
+        if (content) await stream.write(content)
+      }
+    })
+  }
+
+  // ── Mock Interview: Score the user's spoken answer ───────────────────────────
+  if (mode === 'mock-scoring') {
+    const { suggestion = '', userAnswer = '' } = body
+    const questionText = rawTranscript  // transcript field carries the question
+    const prompt = buildMockScoringPrompt(questionText, suggestion, userAnswer)
+    let groqStream
+    try {
+      groqStream = await groq.chat.completions.create({
+        messages: [{ role: 'user', content: prompt }],
+        model: GROQ_MODEL,
+        temperature: 0.3,
+        max_tokens: 120,
+        stream: true,
+      })
+    } catch (err) {
+      console.error('Groq API error (mock-scoring):', err)
+      return c.json({ error: 'AI service temporarily unavailable. Please try again.' }, 503)
+    }
+    return streamText(c, async (stream) => {
+      for await (const chunk of groqStream) {
+        const content = chunk.choices[0]?.delta?.content
+        if (content) await stream.write(content)
+      }
+    })
   }
 
   // Training mode: search local database first — use stored knowledge if found, else generate fresh

@@ -110,3 +110,62 @@ export async function translateText(text: string): Promise<string> {
   const data = await res.json()
   return data.translation
 }
+
+/**
+ * Calls Deepgram TTS via backend proxy.
+ * Returns an object URL pointing to the audio blob (caller must revoke after use).
+ */
+export async function fetchTTSAudio(
+  text: string,
+  voice = 'aura-asteria-en',
+): Promise<string> {
+  const res = await fetch(`${BASE}/deepgram/speak`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, voice }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+    throw new Error(err.error ?? `TTS failed: ${res.status}`)
+  }
+  const blob = await res.blob()
+  return URL.createObjectURL(blob)
+}
+
+/**
+ * Stream a mock-scoring response.
+ * transcript = the question text; suggestion + userAnswer are extra fields.
+ */
+export async function streamMockScoring(
+  question: string,
+  suggestion: string,
+  userAnswer: string,
+  context: string,
+  onChunk: (chunk: string) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch(`${BASE}/completion`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      transcript: question,
+      context,
+      mode: 'mock-scoring',
+      suggestion,
+      userAnswer,
+    }),
+    signal,
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+    throw new Error(err.error ?? `HTTP ${res.status}`)
+  }
+  const reader = res.body?.getReader()
+  if (!reader) throw new Error('No response body')
+  const decoder = new TextDecoder()
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    onChunk(decoder.decode(value, { stream: true }))
+  }
+}
