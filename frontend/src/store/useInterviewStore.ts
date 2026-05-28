@@ -10,9 +10,6 @@ interface InterviewStore {
   // Setup
   context: string
   setContext: (context: string) => void
-  uploadedPDFs: string[]
-  addPDF: (filename: string) => void
-  removePDF: (filename: string) => void
 
   // Session
   sessionId: string
@@ -52,10 +49,6 @@ export const useInterviewStore = create<InterviewStore>()(
 
       context: '',
       setContext: (context) => set({ context }),
-
-      uploadedPDFs: [],
-      addPDF: () => {},
-      removePDF: () => {},
 
       sessionId: '',
       initSession: () => set({ sessionId: Date.now().toString(), turns: [], currentInterimCaption: '' }),
@@ -113,7 +106,6 @@ export const useInterviewStore = create<InterviewStore>()(
       name: 'interview-copilot-store',
       partialize: (state) => ({
         context: state.context,
-        uploadedPDFs: state.uploadedPDFs,
         audioDeviceId: state.audioDeviceId,
       }),
     },

@@ -14,7 +14,7 @@ const eWin = typeof window !== 'undefined' ? (window as any).electronWindow : nu
 // ─── Main App ────────────────────────────────────────────────────────────────
 function MainApp() {
   const { phase, toggleStealth } = useInterviewStore()
-  const { setMode, setAlwaysOnTop } = useUiMode()
+  const { setAlwaysOnTop } = useUiMode()
   const [paletteOpen, setPaletteOpen] = useState(false)
 
   // Global keyboard shortcuts
@@ -32,14 +32,10 @@ function MainApp() {
         toggleStealth()
         return
       }
-      // Ctrl+Shift+0/1/2 → UiMode
-      if (e.ctrlKey && e.shiftKey && e.code === 'Digit0') { e.preventDefault(); setMode('default') }
-      if (e.ctrlKey && e.shiftKey && e.code === 'Digit1') { e.preventDefault(); setMode('focused-notes') }
-      if (e.ctrlKey && e.shiftKey && e.code === 'Digit2') { e.preventDefault(); setMode('ide-camouflage') }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [toggleStealth, setMode])
+  }, [toggleStealth])
 
   // Listen for AOT changes from Electron main process
   useEffect(() => {
