@@ -16,8 +16,24 @@ export default defineConfig(async () => {
     resolve: {
       alias: { '@': path.resolve(__dirname, './src') },
     },
+    build: {
+      rollupOptions: {
+        input: {
+          main:    path.resolve(__dirname, 'index.html'),
+          overlay: path.resolve(__dirname, 'overlay.html'),
+        },
+      },
+    },
     server: {
       port: 5173,
+      strictPort: true,
+      // Fix Vite 6 HMR WebSocket in Electron:
+      // Vite 6 added token-based WS security; Electron Chromium needs explicit host+protocol
+      hmr: {
+        protocol: 'ws',
+        host: 'localhost',
+        port: 5173,
+      },
       proxy: {
         '/api': {
           target: 'http://localhost:3001',

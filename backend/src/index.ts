@@ -9,6 +9,7 @@ import { deepgramRouter } from './routes/deepgram.js'
 import { knowledgeRouter } from './routes/knowledge.js'
 import { licenseRouter } from './routes/license.js'
 import { settingsRouter } from './routes/settings.js'
+import { debugRouter } from './routes/debug.js'
 import { licenseGuard, getLicenseStatus } from './middleware/licenseGuard.js'
 import { getHWID } from './lib/license.js'
 import { existsSync } from 'node:fs'
@@ -38,6 +39,7 @@ app.use(
 app.use('/api/*', licenseGuard)
 
 app.route('/api/license', licenseRouter)     // luôn public — UI kích hoạt
+app.route('/api/debug', debugRouter)         // dev-only debug log receiver (no guard)
 app.route('/api/completion', completionRouter)
 app.route('/api/deepgram', deepgramRouter)
 app.route('/api/knowledge', knowledgeRouter)

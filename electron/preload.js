@@ -1,9 +1,46 @@
 // Preload script — runs in renderer context with Node access disabled
-// Currently minimal; can expose IPC APIs here if needed
-const { contextBridge } = require('electron')
+const { contextBridge, ipcRenderer } = require('electron')
 
-// Expose app info to renderer
+// App info
 contextBridge.exposeInMainWorld('electronApp', {
   isElectron: true,
   platform: process.platform,
+})
+
+// Window control IPC — exposed to renderer safely
+contextBridge.exposeInMainWorld('electronWindow', {
+  minimize:          ()  => ipcRenderer.send('win:minimize'),
+  toggleAlwaysOnTop: ()  => ipcRenderer.send('win:toggle-aot'),
+  setOpacity:        (v) => ipcRenderer.send('win:opacity', v),
+  getAlwaysOnTop:    ()  => ipcRenderer.invoke('win:get-aot'),
+  onAotChanged:      (cb) => {
+    ipcRenderer.on('win:aot-changed', (_, val) => cb(val))
+    return () => ipcRenderer.removeAllListeners('win:aot-changed')
+  },
+})
+
+// WASAPI loopback audio — silently capture system audio without user dialog
+contextBridge.exposeInMainWorld('electronAudio', {
+  getDesktopSourceId:      () => ipcRenderer.invoke('audio:get-desktop-source-id'),
+  requestDisplayCapture:   () => ipcRenderer.invoke('audio:request-display-capture'),
+  logToFile:               (msg) => ipcRenderer.send('log:file', msg),
+})
+
+// Session lifecycle — used by MAIN WINDOW to start/stop interview session
+contextBridge.exposeInMainWorld('electronSession', {
+  start: (data) => ipcRenderer.send('session:start', data),
+})
+
+// Overlay controls — used by OVERLAY WINDOW
+contextBridge.exposeInMainWorld('electronOverlay', {
+  // Receive session data from main process when session starts
+  onInit: (cb) => {
+    const handler = (_, data) => cb(data)
+    ipcRenderer.on('session:init', handler)
+    return () => ipcRenderer.removeListener('session:init', handler)
+  },
+  // Tell main process to show main window + hide overlay
+  stop: () => ipcRenderer.send('session:stop'),
+  // Toggle click-through (hover-to-activate)
+  setInteractive: (interactive) => ipcRenderer.send('overlay:interactive', interactive),
 })

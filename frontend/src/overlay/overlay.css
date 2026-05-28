@@ -1,0 +1,164 @@
+/* ─── Overlay CSS — ultra-minimal, stealth-first ─────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: transparent !important;
+  overflow: hidden;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+#overlay-root {
+  width: 100vw;
+  height: 100vh;
+  background: transparent;
+}
+
+/* ─── Main container — height animates between states ─────────────────────── */
+.overlay-container {
+  width: 100%;
+  background: rgba(7, 9, 20, 0.91);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  backdrop-filter: blur(18px) saturate(180%);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  overflow: hidden;
+  transition: height 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+}
+
+/* ─── Top bar ─────────────────────────────────────────────────────────────── */
+.overlay-bar {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  -webkit-app-region: drag;
+}
+
+/* Recording dot */
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background 300ms;
+}
+.status-dot.live {
+  background: #ef4444;
+  animation: pulse-dot 2.4s ease-in-out infinite;
+}
+.status-dot.dim { background: rgba(100, 110, 140, 0.35); }
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; box-shadow: 0 0 4px rgba(239,68,68,0.5); }
+  50%       { opacity: 0.4; box-shadow: none; }
+}
+
+/* Audio level bars */
+.audio-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.audio-bar {
+  width: 3px;
+  border-radius: 2px;
+  transition: background 70ms;
+}
+
+/* Transcript text (LISTENING state) */
+.transcript-line {
+  flex: 1;
+  font-size: 11.5px;
+  color: rgba(170, 185, 215, 0.45);
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.01em;
+  min-width: 0;
+}
+
+/* Thinking indicator (THINKING state) */
+.thinking-line {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: rgba(120, 130, 165, 0.55);
+  letter-spacing: 0.05em;
+}
+.thinking-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #5254cc;
+  flex-shrink: 0;
+  animation: think 1.4s ease-in-out infinite;
+}
+@keyframes think {
+  0%, 100% { opacity: 0.3; transform: scale(0.7);  }
+  50%       { opacity: 1;   transform: scale(1.2);  }
+}
+
+/* Bar right-side actions */
+.bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+.icon-btn {
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: rgba(100, 115, 150, 0.4);
+  font-size: 11px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 130ms, background 130ms;
+  -webkit-app-region: no-drag;
+}
+.icon-btn:hover            { color: #c8d4e8; background: rgba(255,255,255,0.07); }
+.icon-btn.stop:hover       { color: #ef4444; }
+
+/* ─── Divider ─────────────────────────────────────────────────────────────── */
+.divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* ─── Answer section (ANSWER state) ──────────────────────────────────────── */
+.overlay-answer {
+  padding: 10px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bullet-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 3px 0;
+  animation: fade-in-up 170ms ease both;
+}
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+.bullet-dot  { color: #5254cc; font-size: 15px; line-height: 1.5; flex-shrink: 0; }
+.bullet-text { font-size: 13px; color: #c4d0e8; line-height: 1.55; letter-spacing: 0.01em; }

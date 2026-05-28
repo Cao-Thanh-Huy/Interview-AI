@@ -72,3 +72,6 @@ release_err.txt
 
 # ── License key (không commit key thật) ───────────────────
 license.key
+
+# Electron user data cache (per-project isolation)
+.electron-cache/

@@ -38,6 +38,10 @@ interface InterviewStore {
   // UI
   stealthMode: boolean
   toggleStealth: () => void
+
+  // Audio source preference (persisted)
+  audioDeviceId: string | null   // null = default mic
+  setAudioDeviceId: (id: string | null) => void
 }
 
 export const useInterviewStore = create<InterviewStore>()(
@@ -101,12 +105,16 @@ export const useInterviewStore = create<InterviewStore>()(
 
       stealthMode: false,
       toggleStealth: () => set((s) => ({ stealthMode: !s.stealthMode })),
+
+      audioDeviceId: null,
+      setAudioDeviceId: (audioDeviceId) => set({ audioDeviceId }),
     }),
     {
       name: 'interview-copilot-store',
       partialize: (state) => ({
         context: state.context,
         uploadedPDFs: state.uploadedPDFs,
+        audioDeviceId: state.audioDeviceId,
       }),
     },
   ),

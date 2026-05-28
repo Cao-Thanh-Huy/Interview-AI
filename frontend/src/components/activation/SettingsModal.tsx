@@ -46,7 +46,7 @@ interface ModalProps {
   onLicenseDeactivated: () => void
 }
 
-function SettingsModal({ onClose, onLicenseDeactivated }: ModalProps) {
+export function SettingsModal({ onClose, onLicenseDeactivated }: ModalProps) {
   const [tab, setTab] = useState<'api' | 'license'>('api')
 
   // Close on Escape
@@ -58,59 +58,65 @@ function SettingsModal({ onClose, onLicenseDeactivated }: ModalProps) {
 
   return (
     <>
-      {/* Backdrop */}
-      <motion.div
-        key="backdrop"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
+      {/* Backdrop — solid dark, no blur */}
+      <div
         onClick={onClose}
-        className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
+        style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.55)' }}
       />
 
       {/* Modal */}
       <motion.div
         key="modal"
-        initial={{ opacity: 0, scale: 0.95, y: 16 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 16 }}
-        transition={{ duration: 0.2, ease: 'easeOut' }}
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 10 }}
+        transition={{ duration: 0.18, ease: 'easeOut' }}
+        style={{ position: 'fixed', inset: 0, zIndex: 51, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, pointerEvents: 'none' }}
       >
-        <div className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl pointer-events-auto overflow-hidden">
+        <div style={{ width: '100%', maxWidth: 420, background: 'var(--bg)', border: '1px solid var(--line-2)', borderRadius: 12, boxShadow: '0 16px 48px rgba(0,0,0,0.5)', overflow: 'hidden', pointerEvents: 'auto' }}>
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
-            <div className="flex items-center gap-2.5">
-              <Settings className="w-4 h-4 text-zinc-400" />
-              <span className="font-semibold text-white text-sm">Settings</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', borderBottom: '1px solid var(--line)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Settings size={14} color="var(--muted)" />
+              <span style={{ fontWeight: 600, color: 'var(--text)', fontSize: 13 }}>Settings</span>
             </div>
-            <button onClick={onClose} className="text-zinc-500 hover:text-zinc-200 transition-colors">
-              <X className="w-4 h-4" />
+            <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', display: 'flex' }}>
+              <X size={14} />
             </button>
           </div>
 
-          {/* Tabs */}
-          <div className="flex gap-1 px-6 pt-4">
+          {/* Tabs — flat dark pills */}
+          <div style={{ display: 'flex', gap: 4, padding: '12px 20px 0' }}>
             <button
               onClick={() => setTab('api')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                tab === 'api' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'
-              }`}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: '5px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500,
+                border: 'none', cursor: 'pointer',
+                background: tab === 'api' ? 'var(--surface)' : 'transparent',
+                color: tab === 'api' ? 'var(--text)' : 'var(--muted)',
+                transition: 'background 120ms ease-out, color 120ms ease-out',
+              }}
             >
-              <Key className="w-3.5 h-3.5" /> API Keys
+              <Key size={12} /> API Keys
             </button>
             <button
               onClick={() => setTab('license')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                tab === 'license' ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-300'
-              }`}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: '5px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500,
+                border: 'none', cursor: 'pointer',
+                background: tab === 'license' ? 'var(--surface)' : 'transparent',
+                color: tab === 'license' ? 'var(--text)' : 'var(--muted)',
+                transition: 'background 120ms ease-out, color 120ms ease-out',
+              }}
             >
-              <Shield className="w-3.5 h-3.5" /> License
+              <Shield size={12} /> License
             </button>
           </div>
 
           {/* Content */}
-          <div className="px-6 py-4 pb-6">
+          <div style={{ padding: '16px 20px 20px' }}>
             {tab === 'api' ? (
               <ApiKeysTab />
             ) : (
@@ -166,78 +172,90 @@ function ApiKeysTab() {
     }
   }, [groqKey, deepgramKey])
 
+  // Groq key input
+  const inputStyle = {
+    width: '100%', padding: '7px 32px 7px 10px',
+    background: 'var(--surface)', border: '1px solid var(--line)',
+    borderRadius: 6, fontSize: 12, color: 'var(--text)',
+    fontFamily: 'monospace', outline: 'none',
+    transition: 'border-color 120ms ease-out',
+  } as const
+
   return (
-    <div className="space-y-4 mt-2">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 8 }}>
+      {/* Status badges */}
       {status && (
-        <div className="flex gap-2">
-          <span className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${status.groqKeySet ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-zinc-800 text-zinc-500 border border-zinc-700'}`}>
-            <CheckCircle2 className="w-3 h-3" /> Groq {status.groqKeySet ? 'Set' : 'Not set'}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <span className={status.groqKeySet ? 'badge-success' : 'badge-muted'}>
+            <CheckCircle2 size={10} /> Groq {status.groqKeySet ? 'Set' : 'Not set'}
           </span>
-          <span className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full ${status.deepgramKeySet ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-zinc-800 text-zinc-500 border border-zinc-700'}`}>
-            <CheckCircle2 className="w-3 h-3" /> Deepgram {status.deepgramKeySet ? 'Set' : 'Not set'}
+          <span className={status.deepgramKeySet ? 'badge-success' : 'badge-muted'}>
+            <CheckCircle2 size={10} /> Deepgram {status.deepgramKeySet ? 'Set' : 'Not set'}
           </span>
         </div>
       )}
 
       {/* Groq */}
       <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="text-xs font-medium text-zinc-400">Groq API Key</label>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Groq API Key</label>
           <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300">
-            Get key <ExternalLink className="w-3 h-3" />
+            style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--primary)', textDecoration: 'none' }}>
+            Get key <ExternalLink size={10} />
           </a>
         </div>
-        <div className="relative">
+        <div style={{ position: 'relative' }}>
           <input type={showGroq ? 'text' : 'password'} value={groqKey}
             onChange={e => { setGroqKey(e.target.value); setError('') }}
-            placeholder={status?.groqKeySet ? 'Leave blank to keep current key' : 'gsk_xxxxxxxxxxxx'}
-            className="w-full px-3 py-2 pr-10 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-200 placeholder:text-zinc-600 font-mono focus:outline-none focus:ring-1 focus:ring-violet-500/50 transition-all"
+            placeholder={status?.groqKeySet ? 'Leave blank to keep current' : 'gsk_xxxxxxxxxxxx'}
+            style={inputStyle}
           />
-          <button onClick={() => setShowGroq(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300">
-            {showGroq ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+          <button onClick={() => setShowGroq(v => !v)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)' }}>
+            {showGroq ? <EyeOff size={13} /> : <Eye size={13} />}
           </button>
         </div>
       </div>
 
       {/* Deepgram */}
       <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="text-xs font-medium text-zinc-400">Deepgram API Key</label>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>Deepgram API Key</label>
           <a href="https://console.deepgram.com/" target="_blank" rel="noopener noreferrer"
-            className="flex items-center gap-1 text-xs text-teal-400 hover:text-teal-300">
-            Get key <ExternalLink className="w-3 h-3" />
+            style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#2dd4bf', textDecoration: 'none' }}>
+            Get key <ExternalLink size={10} />
           </a>
         </div>
-        <div className="relative">
+        <div style={{ position: 'relative' }}>
           <input type={showDeepgram ? 'text' : 'password'} value={deepgramKey}
             onChange={e => { setDeepgramKey(e.target.value); setError('') }}
-            placeholder={status?.deepgramKeySet ? 'Leave blank to keep current key' : 'xxxxxxxxxxxxxxxx'}
-            className="w-full px-3 py-2 pr-10 bg-zinc-800 border border-zinc-700 rounded-lg text-xs text-zinc-200 placeholder:text-zinc-600 font-mono focus:outline-none focus:ring-1 focus:ring-teal-500/50 transition-all"
+            placeholder={status?.deepgramKeySet ? 'Leave blank to keep current' : 'xxxxxxxxxxxxxxxx'}
+            style={inputStyle}
           />
-          <button onClick={() => setShowDeepgram(v => !v)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300">
-            {showDeepgram ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+          <button onClick={() => setShowDeepgram(v => !v)} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)' }}>
+            {showDeepgram ? <EyeOff size={13} /> : <Eye size={13} />}
           </button>
         </div>
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 p-2.5 bg-red-500/10 border border-red-500/20 rounded-lg">
-          <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
-          <p className="text-xs text-red-300">{error}</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.2)', borderRadius: 6 }}>
+          <AlertTriangle size={12} color="var(--danger)" />
+          <p style={{ fontSize: 11, color: 'var(--danger)' }}>{error}</p>
         </div>
       )}
       {saved && (
-        <div className="flex items-center gap-2 p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
-          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-          <p className="text-xs text-emerald-300">API keys saved successfully!</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 6 }}>
+          <CheckCircle2 size={12} color="var(--success)" />
+          <p style={{ fontSize: 11, color: 'var(--success)' }}>API keys saved successfully!</p>
         </div>
       )}
 
+      {/* Save button — solid primary, no gradient */}
       <button onClick={handleSave} disabled={saving}
-        className="w-full py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:from-zinc-700 disabled:to-zinc-700 text-white text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-2"
+        className="btn btn-primary w-full py-2 flex items-center justify-center gap-2"
+        style={{ opacity: saving ? 0.5 : 1 }}
       >
-        {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...</> : <><Key className="w-3.5 h-3.5" /> Update Keys</>}
+        {saving ? <><Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> Saving...</> : <><Key size={13} /> Update Keys</>}
       </button>
     </div>
   )

@@ -4,42 +4,28 @@ import { Sparkles, Mic, MicOff, Monitor, Square, X, Move, SendHorizontal, Maximi
 import { useInterviewStore } from '@/store/useInterviewStore'
 import { translateText } from '@/lib/api'
 
-// Ultra-lightweight markdown-free parser for suggestions
+// Plain-text suggestion renderer — NO markdown parser, NO bold parsing
 function renderCleanSuggestions(text: string, isGenerating?: boolean) {
   if (!text) {
     if (isGenerating) {
       return (
-        <div className="space-y-2 py-1.5 animate-pulse">
-          <div className="h-2 bg-slate-200/60 rounded w-11/12" />
-          <div className="h-2 bg-slate-200/60 rounded w-10/12" />
-          <div className="h-2 bg-slate-200/60 rounded w-9/12" />
-          <div className="h-2 bg-slate-200/60 rounded w-7/12" />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '4px 0' }}>
+          {[11, 9, 7].map((w, i) => (
+            <div key={i} style={{ height: 8, borderRadius: 4, background: 'rgba(255,255,255,0.06)', width: `${w * 9}%` }} />
+          ))}
         </div>
       )
     }
     return null
   }
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  // Clean and split — no markdown parser
+  const lines = text
+    .split('\n')
+    .map(l => l.trim().replace(/^[-*•]\s*/, '').replace(/^\d+\.\s*/, '').replace(/\*\*(.*?)\*\*/g, '$1'))
+    .filter(Boolean)
   return (
-    <ul className="list-disc pl-4 space-y-1 text-xs text-slate-600">
-      {lines.map((line, idx) => {
-        const cleanLine = line.replace(/^[-*•]\s*/, '').replace(/^\d+\.\s*/, '')
-        const parts = cleanLine.split(/(\*\*.*?\*\*)/)
-        return (
-          <li key={idx} className="leading-relaxed">
-            {parts.map((part, pIdx) => {
-              if (part.startsWith('**') && part.endsWith('**')) {
-                return (
-                  <strong key={pIdx} className="font-semibold text-slate-800">
-                    {part.slice(2, -2)}
-                  </strong>
-                )
-              }
-              return part
-            })}
-          </li>
-        )
-      })}
+    <ul className="suggestion-list">
+      {lines.map((line, idx) => <li key={idx}>{line}</li>)}
     </ul>
   )
 }
@@ -367,23 +353,25 @@ export function MiniPlayer({ onClose, onStop, onManualSubmit, isRecording, audio
       </div>
 
       {/* Manual question input */}
-      <div className="shrink-0 pt-2 mt-1 border-t border-slate-200/50">
-        <div className="flex items-center gap-1.5">
+      <div style={{ flexShrink: 0, paddingTop: 8, marginTop: 4, borderTop: '1px solid var(--line)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <input
             type="text"
             value={manualInput}
             onChange={(e) => setManualInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleManualSubmit() } }}
             placeholder="Type a question..."
-            className="flex-1 text-[11px] bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 placeholder-slate-400 focus:outline-none focus:border-indigo-300 focus:bg-white transition-colors"
+            className="input-dark"
+            style={{ flex: 1, fontSize: 11 }}
           />
           <button
             onClick={handleManualSubmit}
             disabled={!manualInput.trim()}
-            className="p-1.5 rounded-lg bg-indigo-500 text-white hover:bg-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors shrink-0"
+            className="btn btn-primary"
+            style={{ padding: '5px', opacity: !manualInput.trim() ? 0.3 : 1, flexShrink: 0 }}
             title="Submit question (Enter)"
           >
-            <SendHorizontal className="w-3 h-3" />
+            <SendHorizontal size={12} />
           </button>
         </div>
       </div>
@@ -400,27 +388,38 @@ export function MiniPlayer({ onClose, onStop, onManualSubmit, isRecording, audio
     return (
       <div
         ref={fallbackRef}
-        className="fixed z-50 bg-white/95 border border-slate-200 shadow-2xl rounded-2xl p-3 flex flex-col pointer-events-auto transition-shadow overflow-auto"
+        className="contain"
         style={{
-          bottom: '20px',
-          right: '20px',
-          width: '320px',
-          height: '384px',
-          minWidth: '240px',
-          minHeight: '220px',
-          maxHeight: '90vh',
+          position: 'fixed', zIndex: 50,
+          bottom: 20, right: 20,
+          width: 320, height: 400,
+          minWidth: 260, minHeight: 220, maxHeight: '90vh',
+          background: 'rgba(12,12,20,0.96)',  /* solid dark — NO blur */
+          border: '1px solid var(--line-2)',
+          borderRadius: 10,
+          boxShadow: '0 16px 48px rgba(0,0,0,0.5)',
+          display: 'flex', flexDirection: 'column',
+          overflow: 'hidden',
           resize: 'both',
-          transform: `translate3d(0, 0, 0)`,
+          pointerEvents: 'auto',
+          transform: 'translate3d(0,0,0)',
           willChange: 'transform',
         }}
       >
-        {/* Drag handle for fallback */}
+        {/* Drag handle */}
         <div
           onMouseDown={handleMouseDown}
-          className="absolute -top-3 left-1/2 -translate-x-1/2 bg-slate-800 text-white rounded-full px-2.5 py-0.5 text-[9px] flex items-center gap-1 cursor-grab active:cursor-grabbing hover:bg-slate-700 transition-colors shadow"
+          style={{
+            flexShrink: 0,
+            height: 28,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'grab',
+            borderBottom: '1px solid var(--line)',
+            color: 'var(--muted)', fontSize: 10, gap: 4,
+          }}
         >
-          <Move className="w-2.5 h-2.5" />
-          <span>Drag Mini HUD</span>
+          <Move size={10} />
+          <span>Drag</span>
         </div>
         {content}
       </div>

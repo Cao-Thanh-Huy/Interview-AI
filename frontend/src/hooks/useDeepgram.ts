@@ -15,23 +15,24 @@ export function useDeepgram({
   onUtteranceEnd,
   onStatusChange,
   onError,
-  onWarning,
 }: UseDeepgramOptions) {
   const [status, setStatus] = useState<DeepgramStatus>('idle')
   const [audioSource, setAudioSource] = useState<AudioSource>(null)
-  const [screenStream, setScreenStream] = useState<MediaStream | null>(null)
   const [isMuted, setIsMuted] = useState(false)
+  const [audioLevel, setAudioLevel] = useState(0)  // 0-100 integer
 
   const wsRef = useRef<WebSocket | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const audioStreamRef = useRef<MediaStream | null>(null)
-  const displayStreamRef = useRef<MediaStream | null>(null)
   const audioQueueRef = useRef<Blob[]>([])
   const isProcessingRef = useRef(false)
   const pendingTranscriptRef = useRef('')
   const isMutedRef = useRef(false)
   const keepAliveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const connectionIdRef = useRef(0)
+  const analyserRef = useRef<AnalyserNode | null>(null)
+  const levelRafRef = useRef<number | null>(null)
+  const audioCtxRef = useRef<AudioContext | null>(null)
 
   const updateStatus = useCallback(
     (s: DeepgramStatus) => {
@@ -40,6 +41,42 @@ export function useDeepgram({
     },
     [onStatusChange],
   )
+
+  // ── Audio level analyser ────────────────────────────────────────────────────
+  const startLevelMeter = useCallback((stream: MediaStream) => {
+    try {
+      const ctx = new AudioContext()
+      audioCtxRef.current = ctx
+      // Resume is required — Chromium may suspend AudioContext without user gesture
+      ctx.resume().then(() => console.log('[Audio] AudioContext state:', ctx.state))
+      const source = ctx.createMediaStreamSource(stream)
+      const analyser = ctx.createAnalyser()
+      analyser.fftSize = 256
+      analyser.smoothingTimeConstant = 0.4
+      source.connect(analyser)
+      analyserRef.current = analyser
+
+      const buf = new Uint8Array(analyser.frequencyBinCount)
+      const tick = () => {
+        analyser.getByteFrequencyData(buf)
+        const avg = buf.reduce((s, v) => s + v, 0) / buf.length
+        setAudioLevel(Math.round(avg))
+        levelRafRef.current = requestAnimationFrame(tick)
+      }
+      levelRafRef.current = requestAnimationFrame(tick)
+    } catch {
+      // AudioContext not supported — ignore
+    }
+  }, [])
+
+  const stopLevelMeter = useCallback(() => {
+    if (levelRafRef.current) cancelAnimationFrame(levelRafRef.current)
+    levelRafRef.current = null
+    analyserRef.current = null
+    audioCtxRef.current?.close().catch(() => {})
+    audioCtxRef.current = null
+    setAudioLevel(0)
+  }, [])
 
   const flushAudioQueue = useCallback(() => {
     if (
@@ -77,6 +114,7 @@ export function useDeepgram({
           return
         }
         key = result.key
+        console.log('[Deepgram] Key ready, length:', key?.length)
       } catch (err) {
         if (currentId !== connectionIdRef.current) {
           audioStream.getTracks().forEach((t) => t.stop())
@@ -106,17 +144,28 @@ export function useDeepgram({
         ...(preferredMime.includes('opus') && { encoding: 'opus', container: 'webm' }),
       })
 
-      const ws = new WebSocket(`wss://api.deepgram.com/v1/listen?${params}`, ['token', key])
+      const wsUrl = `wss://api.deepgram.com/v1/listen?${params}`
+      console.log('[Deepgram] Connecting to Deepgram WebSocket...')
+      const ws = new WebSocket(wsUrl, ['token', key])
       wsRef.current = ws
 
       ws.onopen = () => {
+        console.log('[Deepgram] WebSocket opened ✅ — readyState:', ws.readyState)
         updateStatus('connected')
+
+        // Start level meter
+        startLevelMeter(audioStream)
 
         const recorderOptions = preferredMime ? { mimeType: preferredMime } : {}
         const recorder = new MediaRecorder(audioStream, recorderOptions)
         recorderRef.current = recorder
 
+        let chunkCount = 0
         recorder.ondataavailable = (e) => {
+          chunkCount++
+          if (chunkCount <= 5 || chunkCount % 20 === 0) {
+            console.log(`[Audio] Chunk #${chunkCount} size=${e.data.size} bytes, muted=${isMutedRef.current}`)
+          }
           if (e.data.size > 0 && !isMutedRef.current) {
             audioQueueRef.current.push(e.data)
             flushAudioQueue()
@@ -124,6 +173,7 @@ export function useDeepgram({
         }
 
         recorder.start(500)
+        console.log('[Audio] MediaRecorder started, mimeType:', recorder.mimeType)
       }
 
       ws.onmessage = (e) => {
@@ -161,92 +211,141 @@ export function useDeepgram({
       }
 
       ws.onclose = (event) => {
+        console.log(`[Deepgram] WebSocket closed — code: ${event.code}, reason: ${event.reason || '(no reason)'}, wasClean: ${event.wasClean}`)
         const isNormal = event.code === 1000 || event.code === 1005
         if (!isNormal && event.code !== 0) {
           onError?.(`Connection closed unexpectedly (code: ${event.code})`)
         }
+        stopLevelMeter()
         updateStatus('idle')
         recorderRef.current?.stop()
       }
 
-      ws.onerror = () => {
+      ws.onerror = (err) => {
+        console.error('[Deepgram] WebSocket error ❌:', err)
         onError?.('WebSocket error. Check your API key and network connection.')
+        stopLevelMeter()
         updateStatus('error')
       }
     },
-    [updateStatus, flushAudioQueue, onTranscript, onUtteranceEnd, onError],
+    [updateStatus, flushAudioQueue, onTranscript, onUtteranceEnd, onError, startLevelMeter, stopLevelMeter],
   )
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (deviceId?: string) => {
     const currentId = ++connectionIdRef.current
-
-    // ── Step 1: get microphone (reliable baseline, no dialog) ──────────
     let audioStream: MediaStream | null = null
 
-    try {
-      audioStream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      if (currentId !== connectionIdRef.current) {
-        audioStream?.getTracks().forEach((t) => t.stop())
-        return
+    const isElectron = !!(window as unknown as { electronAudio?: unknown }).electronAudio
+
+    // ── Tier 1: WASAPI loopback via Electron (works on ANY Windows machine) ─────
+    // Main process setDisplayMediaRequestHandler intercepts getDisplayMedia:
+    //   video → WebFrameMain  (Chromium-internal compositing, ZERO DXGI)
+    //   audio → 'loopback'    (Windows WASAPI render endpoint, built into all Windows)
+    if (isElectron && !deviceId) {
+      // Tier 1a: Try getDisplayMedia directly (works when there's a user gesture)
+      try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
+        if (currentId !== connectionIdRef.current) { stream.getTracks().forEach(t => t.stop()); return }
+        stream.getVideoTracks().forEach(t => t.stop())
+        const tracks = stream.getAudioTracks()
+        console.log(`[Audio] getDisplayMedia returned ${tracks.length} audio track(s)`, tracks.map(t => t.label))
+        if (tracks.length > 0) {
+          audioStream = new MediaStream(tracks)
+          setAudioSource('system')
+          console.log('[Audio] ✅ WASAPI loopback active (Tier 1a — getDisplayMedia)')
+        } else {
+          console.warn('[Audio] ⚠️ Tier 1a: 0 audio tracks — WASAPI returned no audio, falling to Tier 1b')
+        }
+      } catch (err) {
+        if (currentId !== connectionIdRef.current) return
+        console.warn('[Audio] ⚠️ Tier 1a getDisplayMedia blocked (likely no user gesture in overlay):', err)
       }
-      setAudioSource('microphone')
-    } catch {
-      // Mic denied — will still try system audio below
+
+      // Tier 1b: IPC-based capture — main process grabs source ID (bypasses user-gesture requirement)
+      if (!audioStream) {
+        try {
+          const electronAudio = (window as unknown as { electronAudio?: { requestDisplayCapture: () => Promise<string | null> } }).electronAudio
+          const sourceId = await electronAudio?.requestDisplayCapture()
+          if (currentId !== connectionIdRef.current) return
+          console.log('[Audio] Tier 1b: sourceId from IPC =', sourceId)
+          if (sourceId) {
+            const stream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                // @ts-expect-error — Electron/Chromium-specific constraint
+                mandatory: {
+                  chromeMediaSource: 'desktop',
+                  chromeMediaSourceId: sourceId,
+                },
+              },
+              video: false,
+            })
+            if (currentId !== connectionIdRef.current) { stream.getTracks().forEach(t => t.stop()); return }
+            const tracks = stream.getAudioTracks()
+            console.log(`[Audio] Tier 1b getUserMedia tracks: ${tracks.length}`, tracks.map(t => t.label))
+            if (tracks.length > 0) {
+              audioStream = new MediaStream(tracks)
+              setAudioSource('system')
+              console.log('[Audio] ✅ WASAPI loopback active (Tier 1b — IPC chromeMediaSource)')
+            }
+          }
+        } catch (err) {
+          if (currentId !== connectionIdRef.current) return
+          console.warn('[Audio] ❌ Tier 1b IPC capture failed:', err)
+        }
+      }
     }
 
-    // ── Step 2: try screen share for system audio (optional upgrade) ───
-    try {
-      const displayMedia = await navigator.mediaDevices.getDisplayMedia({
-        video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
-        audio: true,
-      })
-
-      if (currentId !== connectionIdRef.current) {
-        displayMedia.getTracks().forEach((t) => t.stop())
-        audioStream?.getTracks().forEach((t) => t.stop())
-        return
-      }
-
-      displayStreamRef.current = displayMedia
-
-      const videoTracks = displayMedia.getVideoTracks()
-      if (videoTracks.length > 0) {
-        setScreenStream(new MediaStream(videoTracks))
-      }
-
-      const systemAudioTracks = displayMedia.getAudioTracks()
-      if (systemAudioTracks.length > 0) {
-        // System audio available → upgrade, release mic to save resources
-        audioStream?.getTracks().forEach((t) => t.stop())
-        audioStream = new MediaStream(systemAudioTracks)
-        setAudioSource('system')
-      } else {
-        // Screen shared but no audio — warn the user
-        onWarning?.(
-          '⚠️ Screen shared but no audio detected. In your share dialog, enable "Share system audio" / "Share tab audio" to capture interviewer voice.',
+    // ── Tier 2: Stereo Mix / VB-Cable auto-detection ──────────────────────────
+    if (!audioStream && !deviceId) {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices()
+        const loopback = devices.find(d =>
+          d.kind === 'audioinput' &&
+          /stereo mix|what u hear|wave out mix|loopback|vb-audio|vb-cable|cable output/i.test(d.label)
         )
-      }
-
-      displayMedia.getVideoTracks()[0]?.addEventListener('ended', () => stop())
-    } catch (err) {
-      const error = err as Error
-      // User cancelled screen share (NotAllowedError / AbortError) → fine, keep mic
-      if (error.name !== 'NotAllowedError' && error.name !== 'AbortError') {
-        console.warn('getDisplayMedia failed:', error.message)
-      }
-      if (currentId !== connectionIdRef.current) {
-        audioStream?.getTracks().forEach((t) => t.stop())
-        return
+        if (loopback) {
+          audioStream = await navigator.mediaDevices.getUserMedia({
+            audio: { deviceId: { exact: loopback.deviceId } }, video: false,
+          })
+          if (currentId !== connectionIdRef.current) { audioStream.getTracks().forEach(t => t.stop()); return }
+          setAudioSource('system')
+          console.log('[Audio] Loopback device (Tier 2):', loopback.label)
+        }
+      } catch (err) {
+        if (currentId !== connectionIdRef.current) return
+        console.warn('[Audio] Tier 2 Stereo Mix failed:', err)
       }
     }
 
-    // ── Step 3: ensure we have audio from at least one source ──────────
+    // ── Tier 3: Caller-specified deviceId (manual selection) ──────────────────
+    if (!audioStream && deviceId) {
+      try {
+        audioStream = await navigator.mediaDevices.getUserMedia({
+          audio: { deviceId: { exact: deviceId } }, video: false,
+        })
+        if (currentId !== connectionIdRef.current) { audioStream.getTracks().forEach(t => t.stop()); return }
+        setAudioSource('system')
+        console.log('[Audio] Specified device (Tier 3):', deviceId)
+      } catch (err) {
+        if (currentId !== connectionIdRef.current) return
+        console.warn('[Audio] Tier 3 specified device failed:', err)
+      }
+    }
+
+    // ── Tier 4: Default microphone fallback ───────────────────────────────────
     if (!audioStream) {
-      onError?.(
-        'Microphone access denied. Please allow microphone access in your browser settings and try again.',
-      )
-      updateStatus('idle')
-      return
+      try {
+        audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+        if (currentId !== connectionIdRef.current) { audioStream.getTracks().forEach(t => t.stop()); return }
+        setAudioSource('microphone')
+        console.log('[Audio] Default microphone (Tier 4 fallback)')
+      } catch (err) {
+        const error = err as Error
+        if (currentId !== connectionIdRef.current) return
+        onError?.(`Audio capture failed: ${error.message}`)
+        updateStatus('idle')
+        return
+      }
     }
 
     audioStreamRef.current = audioStream
@@ -282,6 +381,8 @@ export function useDeepgram({
     }
     isMutedRef.current = false
 
+    stopLevelMeter()
+
     recorderRef.current?.stop()
     recorderRef.current = null
 
@@ -291,19 +392,20 @@ export function useDeepgram({
     audioStreamRef.current?.getTracks().forEach((t) => t.stop())
     audioStreamRef.current = null
 
-    displayStreamRef.current?.getTracks().forEach((t) => t.stop())
-    displayStreamRef.current = null
-
-    setScreenStream(null)
     setAudioSource(null)
     pendingTranscriptRef.current = ''
     audioQueueRef.current = []
     isProcessingRef.current = false
 
     updateStatus('idle')
-  }, [updateStatus])
+  }, [updateStatus, stopLevelMeter])
 
-  useEffect(() => () => stop(), [stop])
+  // Cleanup on unmount only.
+  // Using [] instead of [stop] prevents the cleanup from re-running every time
+  // stop() reference changes (which happens when updateStatus/onStatusChange re-creates).
+  // Safe because stop() only accesses refs (wsRef, recorderRef...) which are always current.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => () => stop(), [])
 
-  return { start, stop, status, audioSource, screenStream, isMuted, toggleMute }
+  return { start, stop, status, audioSource, isMuted, toggleMute, audioLevel }
 }

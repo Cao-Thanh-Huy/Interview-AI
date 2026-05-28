@@ -115,30 +115,30 @@ function ScoreBlock({ text }: { text: string }) {
   const starCount = score !== null ? Math.round((score / 10) * 5) : null
 
   return (
-    <div className="mt-3 rounded-xl bg-white/60 border border-slate-200/60 p-3 space-y-2">
+    <div className="mt-3 rounded-xl p-3 space-y-2" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
       {score !== null && (
         <div className="flex items-center gap-2">
-          <span className="text-sm font-bold text-slate-700">Score:</span>
-          <span className="text-yellow-500 text-sm tracking-tight">
+          <span className="text-sm font-bold" style={{ color: 'var(--text)' }}>Score:</span>
+          <span className="text-yellow-400 text-sm tracking-tight">
             {'★'.repeat(starCount ?? 0)}{'☆'.repeat(5 - (starCount ?? 0))}
           </span>
-          <span className="text-xs font-bold text-slate-600">{score}/10</span>
+          <span className="text-xs font-bold" style={{ color: '#94a3b8' }}>{score}/10</span>
         </div>
       )}
       {goods.map((g, i) => (
-        <div key={`g-${i}`} className="flex items-start gap-1.5 text-xs text-emerald-700">
+        <div key={`g-${i}`} className="flex items-start gap-1.5 text-xs text-emerald-400">
           <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 shrink-0" />
           <span>{g}</span>
         </div>
       ))}
       {bads.map((b, i) => (
-        <div key={`b-${i}`} className="flex items-start gap-1.5 text-xs text-rose-600">
+        <div key={`b-${i}`} className="flex items-start gap-1.5 text-xs text-rose-400">
           <XCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
           <span>{b}</span>
         </div>
       ))}
       {!scoreMatch && text.trim() && (
-        <p className="text-xs text-slate-500 whitespace-pre-wrap">{text}</p>
+        <p className="text-xs whitespace-pre-wrap" style={{ color: 'var(--muted)' }}>{text}</p>
       )}
     </div>
   )
@@ -155,33 +155,28 @@ function TurnCard({ turn, isLatest }: { turn: MockTurn; isLatest: boolean }) {
     done: '',
   }
 
+  const cardStyle = isLatest
+    ? { background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.2)' }
+    : { background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }
+
   return (
-    <div
-      className={cn(
-        'rounded-2xl border transition-all duration-300',
-        isLatest
-          ? 'border-indigo-200 bg-white/80 shadow-md shadow-indigo-100/40'
-          : 'border-slate-200/50 bg-white/40 shadow-sm',
-      )}
-    >
+    <div className="rounded-2xl transition-all duration-300" style={cardStyle}>
       {/* Question header */}
       <div className="flex items-start gap-3 p-4 pb-3">
         <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-600 to-cyan-500 flex items-center justify-center shrink-0 text-white text-xs font-bold shadow">
           {turn.index}
         </div>
         <div className="flex-1 min-w-0">
-          <span className="text-[10px] text-indigo-500 font-semibold uppercase tracking-wider">
-            Interviewer
-          </span>
-          <p className="text-sm font-medium text-slate-800 mt-0.5 leading-relaxed">
+          <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--primary)' }}>Interviewer</span>
+          <p className="text-sm font-medium mt-0.5 leading-relaxed" style={{ color: 'var(--text)' }}>
             {turn.question || (
-              <span className="flex items-center gap-1.5 text-slate-400">
+              <span className="flex items-center gap-1.5" style={{ color: 'var(--muted)' }}>
                 <Loader2 className="w-3.5 h-3.5 animate-spin" /> Thinking...
               </span>
             )}
           </p>
           {isLatest && turn.phase !== 'done' && phaseLabel[turn.phase] && (
-            <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
+            <p className="text-[10px] mt-1 flex items-center gap-1" style={{ color: 'var(--muted)' }}>
               <Loader2 className="w-3 h-3 animate-spin" />
               {phaseLabel[turn.phase]}
             </p>
@@ -192,11 +187,9 @@ function TurnCard({ turn, isLatest }: { turn: MockTurn; isLatest: boolean }) {
       {/* Suggestion hint */}
       {(turn.suggestion || turn.isSuggestionStreaming) && (
         <div className="px-4 pb-3">
-          <div className="rounded-xl bg-indigo-50/70 border border-indigo-100 p-3">
-            <p className="text-[10px] text-indigo-500 font-semibold uppercase tracking-wider mb-1.5">
-              💡 Suggested Answer
-            </p>
-            <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
+          <div className="rounded-xl p-3" style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.15)' }}>
+            <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: '#818cf8' }}>💡 Suggested Answer</p>
+            <p className="text-xs leading-relaxed whitespace-pre-wrap" style={{ color: '#cbd5e1' }}>
               {turn.suggestion}
               {turn.isSuggestionStreaming && (
                 <span className="inline-block w-1.5 h-3.5 bg-indigo-400 animate-pulse ml-0.5 align-middle" />
@@ -206,16 +199,14 @@ function TurnCard({ turn, isLatest }: { turn: MockTurn; isLatest: boolean }) {
         </div>
       )}
 
-      {/* User transcript (live or finalized) */}
+      {/* User transcript */}
       {(turn.userTranscript || turn.userAnswer || turn.phase === 'recording') && (
         <div className="px-4 pb-3">
-          <div className="rounded-xl bg-slate-50/80 border border-slate-200/60 p-3">
-            <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-1.5">
-              🎙 Your Answer
-            </p>
-            <p className="text-xs text-slate-600 leading-relaxed min-h-[18px]">
+          <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+            <p className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--muted)' }}>🎙 Your Answer</p>
+            <p className="text-xs leading-relaxed min-h-[18px]" style={{ color: '#94a3b8' }}>
               {turn.userAnswer || turn.userTranscript || (
-                <span className="text-slate-300 italic">Speaking...</span>
+                <span className="italic" style={{ color: 'var(--muted)', opacity: 0.5 }}>Speaking...</span>
               )}
               {turn.phase === 'recording' && !turn.userAnswer && (
                 <span className="inline-block w-1.5 h-3.5 bg-slate-400 animate-pulse ml-0.5 align-middle" />
@@ -229,7 +220,7 @@ function TurnCard({ turn, isLatest }: { turn: MockTurn; isLatest: boolean }) {
       {(turn.score || turn.isScoringStreaming) && (
         <div className="px-4 pb-4">
           {turn.isScoringStreaming && !turn.score ? (
-            <div className="flex items-center gap-1.5 text-xs text-slate-400 mt-1">
+            <div className="flex items-center gap-1.5 text-xs mt-1" style={{ color: 'var(--muted)' }}>
               <Loader2 className="w-3 h-3 animate-spin" /> Scoring...
             </div>
           ) : (
@@ -522,31 +513,30 @@ export function MockInterviewPanel() {
   const isGenerating = lastTurn?.phase === 'asking' || lastTurn?.phase === 'suggesting'
 
   return (
-    <div className="flex flex-col gap-4 min-h-[560px]">
+    <div className="flex flex-col gap-4 p-5 overflow-y-auto flex-1">
       {/* Header controls */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <BrainCircuit className="w-4 h-4 text-indigo-600" />
-          <span className="text-sm font-semibold text-slate-700">Mock Interview</span>
+          <BrainCircuit className="w-4 h-4" style={{ color: 'var(--primary)' }} />
+          <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Mock Interview</span>
           {sessionActive && (
-            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100">
-              Live
-            </span>
+            <span className="badge-success">Live</span>
           )}
         </div>
         <div className="flex items-center gap-2">
-          {/* TTS toggle */}
           <button
             onClick={() => setIsTTSEnabled((v) => !v)}
             title={isTTSEnabled ? 'Mute AI voice' : 'Enable AI voice'}
-            className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors text-slate-500"
+            className="p-1.5 rounded-lg transition-colors"
+            style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', color: 'var(--muted)' }}
           >
             {isTTSEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
           </button>
           {sessionActive && (
             <button
               onClick={handleReset}
-              className="flex items-center gap-1 text-xs text-slate-500 hover:text-rose-600 transition-colors px-2 py-1 rounded-lg border border-slate-200 hover:border-rose-200"
+              className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors"
+              style={{ color: 'var(--muted)', background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.15)' }}
             >
               <RotateCcw className="w-3 h-3" /> Reset
             </button>
@@ -556,14 +546,10 @@ export function MockInterviewPanel() {
 
       {/* TTS indicator */}
       {ttsPlaying && (
-        <div className="flex items-center gap-2 text-[10px] text-indigo-500 font-semibold">
+        <div className="flex items-center gap-2 text-[10px] font-semibold" style={{ color: 'var(--primary)' }}>
           <span className="flex gap-0.5">
             {[0, 1, 2].map((i) => (
-              <span
-                key={i}
-                className="w-0.5 h-3 bg-indigo-400 rounded-full animate-bounce"
-                style={{ animationDelay: `${i * 100}ms` }}
-              />
+              <span key={i} className="w-0.5 h-3 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: `${i * 100}ms` }} />
             ))}
           </span>
           AI speaking...
@@ -572,28 +558,27 @@ export function MockInterviewPanel() {
 
       {/* Session turns */}
       {sessionActive ? (
-        <div className="flex flex-col gap-3 flex-1 overflow-y-auto max-h-[520px] pr-1">
+        <div className="flex flex-col gap-3 flex-1 overflow-y-auto max-h-[400px] pr-1">
           {turns.map((turn, i) => (
             <TurnCard key={turn.id} turn={turn} isLatest={i === turns.length - 1} />
           ))}
           <div ref={bottomRef} />
         </div>
       ) : (
-        /* Start screen */
-        <div className="flex flex-col items-center justify-center flex-1 gap-5 py-8 text-center">
+        <div className="flex flex-col items-center justify-center flex-1 gap-5 py-6 text-center">
           <div className="relative">
-            <div className="absolute inset-0 rounded-full bg-indigo-500/10 animate-ping" />
-            <div className="relative w-16 h-16 rounded-full bg-gradient-to-br from-indigo-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+            <div className="absolute inset-0 rounded-full animate-ping" style={{ background: 'rgba(99,102,241,0.1)' }} />
+            <div className="relative w-16 h-16 rounded-full bg-gradient-to-br from-indigo-600 to-cyan-500 flex items-center justify-center" style={{ boxShadow: '0 0 30px rgba(99,102,241,0.3)' }}>
               <BrainCircuit className="w-7 h-7 text-white" />
             </div>
           </div>
           <div className="space-y-1.5 max-w-xs">
-            <h3 className="text-base font-bold text-slate-800">Practice Makes Perfect</h3>
-            <p className="text-xs text-slate-500 leading-relaxed">
+            <h3 className="text-base font-bold" style={{ color: 'var(--text)' }}>Practice Makes Perfect</h3>
+            <p className="text-xs leading-relaxed" style={{ color: 'var(--muted)' }}>
               AI will ask you interview questions (with voice), show suggested answers, and score your spoken responses.
             </p>
           </div>
-          <div className="flex flex-col gap-2 text-xs text-slate-500 bg-slate-50/70 border border-slate-200/60 rounded-xl p-3 w-full max-w-xs text-left">
+          <div className="flex flex-col gap-2 text-xs rounded-xl p-3 w-full max-w-xs text-left" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', color: 'var(--muted)' }}>
             <div className="flex items-center gap-2"><span>🤖</span><span>AI asks question (text + voice)</span></div>
             <div className="flex items-center gap-2"><span>💡</span><span>Suggestion hint appears immediately</span></div>
             <div className="flex items-center gap-2"><span>🎙</span><span>You speak your answer via mic</span></div>
@@ -603,66 +588,34 @@ export function MockInterviewPanel() {
       )}
 
       {/* Bottom action bar */}
-      <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-100">
+      <div className="flex items-center justify-between gap-3 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
         {!sessionActive ? (
-          <button
-            onClick={handleStart}
-            className={cn(
-              'w-full py-3 rounded-xl font-bold text-white text-sm cursor-pointer',
-              'bg-gradient-to-r from-indigo-600 via-indigo-700 to-cyan-600',
-              'hover:from-indigo-500 hover:via-indigo-600 hover:to-cyan-500',
-              'transition-all duration-200 flex items-center justify-center gap-2',
-              'shadow-lg shadow-indigo-600/25',
-            )}
-          >
+          <button onClick={handleStart} className="btn-primary w-full py-3 flex items-center justify-center gap-2" style={{ background: 'linear-gradient(135deg, #6366f1, #22d3ee)' }}>
             <BrainCircuit className="w-4 h-4" />
             Start Mock Interview
           </button>
         ) : (
           <>
-            {/* Mic button */}
             <div className="flex-1">
               {canRecord && (
-                <button
-                  onClick={handleMicToggle}
-                  className={cn(
-                    'w-full py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all duration-200 cursor-pointer',
-                    'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/25',
-                  )}
-                >
-                  <Mic className="w-4 h-4" />
-                  Answer (mic)
+                <button onClick={handleMicToggle} className="w-full py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all text-white" style={{ background: '#10b981', boxShadow: '0 0 20px rgba(16,185,129,0.2)' }}>
+                  <Mic className="w-4 h-4" /> Answer (mic)
                 </button>
               )}
               {canStop && (
-                <button
-                  onClick={handleStopRecording}
-                  className={cn(
-                    'w-full py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all duration-200 cursor-pointer',
-                    'bg-rose-600 hover:bg-rose-700 text-white shadow-md shadow-rose-600/25 animate-pulse',
-                  )}
-                >
-                  <MicOff className="w-4 h-4" />
-                  Stop Recording
+                <button onClick={handleStopRecording} className="w-full py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all text-white animate-pulse" style={{ background: 'var(--danger)' }}>
+                  <MicOff className="w-4 h-4" /> Stop Recording
                 </button>
               )}
               {(isGenerating || lastTurn?.phase === 'scoring') && (
-                <div className="w-full py-2.5 rounded-xl bg-slate-100 text-slate-400 text-sm flex items-center justify-center gap-2">
+                <div className="w-full py-2.5 rounded-xl text-sm flex items-center justify-center gap-2" style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--muted)' }}>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  {isGenerating ? 'AI is preparing...' : 'Scoring your answer...'}
+                  {isGenerating ? 'AI is preparing...' : 'Scoring...'}
                 </div>
               )}
             </div>
-
-            {/* Next question */}
             {canNext && (
-              <button
-                onClick={handleNext}
-                className={cn(
-                  'py-2.5 px-4 rounded-xl font-semibold text-sm flex items-center gap-1.5 transition-all duration-200 cursor-pointer',
-                  'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md',
-                )}
-              >
+              <button onClick={handleNext} className="btn-primary py-2.5 px-4 flex items-center gap-1.5">
                 Next <ChevronRight className="w-4 h-4" />
               </button>
             )}

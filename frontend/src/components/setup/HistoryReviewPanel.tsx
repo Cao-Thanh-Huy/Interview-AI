@@ -1,9 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { RefreshCw, ChevronDown, ChevronUp, Brain, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { RefreshCw, Brain, CheckCircle, AlertCircle, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 import { listHistory, getHistorySession, upsertQA } from '@/lib/api'
 import type { SessionMetadata, TurnEntry } from '@/lib/types'
-import { cn } from '@/lib/utils'
 
 export function HistoryReviewPanel() {
   const [sessions, setSessions] = useState<SessionMetadata[]>([])
@@ -36,9 +34,7 @@ export function HistoryReviewPanel() {
     }
   }, [])
 
-  useEffect(() => {
-    loadSessions()
-  }, [loadSessions])
+  useEffect(() => { loadSessions() }, [loadSessions])
 
   const handleSelectSession = useCallback(async (sessionId: string) => {
     if (selectedId === sessionId) {
@@ -68,8 +64,7 @@ export function HistoryReviewPanel() {
         return
       }
       setSavedTurnIds((prev) => new Set([...prev, turn.id]))
-      const label = result.status === 'updated' ? 'Knowledge updated!' : 'Memorized! ✓'
-      showToast('success', label)
+      showToast('success', result.status === 'updated' ? 'Knowledge updated!' : 'Memorized! ✓')
     } catch (err) {
       showToast('error', (err as Error).message)
     } finally {
@@ -82,137 +77,172 @@ export function HistoryReviewPanel() {
       return new Intl.DateTimeFormat('en-US', {
         month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
       }).format(new Date(iso))
-    } catch {
-      return iso
-    }
+    } catch { return iso }
   }
 
-  return (
-    <div className="space-y-4">
-      {/* Toast */}
-      <AnimatePresence>
-        {toast && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className={cn(
-              'flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium',
-              toast.type === 'success'
-                ? 'bg-emerald-500/10 text-emerald-700 border border-emerald-500/20'
-                : 'bg-red-500/10 text-red-700 border border-red-500/20',
-            )}
-          >
-            {toast.type === 'success' ? <CheckCircle className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
-            {toast.msg}
-          </motion.div>
-        )}
-      </AnimatePresence>
+  const formatDateGroup = (iso: string) => {
+    try {
+      return new Intl.DateTimeFormat('en-US', {
+        weekday: 'short', month: 'short', day: 'numeric', year: 'numeric'
+      }).format(new Date(iso)).toUpperCase()
+    } catch { return iso }
+  }
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-slate-500">
-          {sessions.length === 0 ? 'No sessions recorded yet.' : `${sessions.length} session(s) on disk`}
+  // Group sessions by date
+  const groupedSessions = useMemo(() => {
+    const groups: Record<string, SessionMetadata[]> = {}
+    sessions.forEach((s) => {
+      const dateKey = s.startedAt ? new Date(s.startedAt).toDateString() : 'Unknown'
+      if (!groups[dateKey]) groups[dateKey] = []
+      groups[dateKey].push(s)
+    })
+    return Object.entries(groups)
+  }, [sessions])
+
+  return (
+    <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 0, overflowY: 'auto', flex: 1 }}>
+      {/* Toast */}
+      {toast && (
+        <div
+          className="animate-panel"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 500,
+            marginBottom: 12,
+            ...(toast.type === 'success'
+              ? { background: 'rgba(16,185,129,0.10)', color: '#10b981', border: '1px solid rgba(16,185,129,0.2)' }
+              : { background: 'rgba(244,63,94,0.10)', color: '#f43f5e', border: '1px solid rgba(244,63,94,0.2)' })
+          }}
+        >
+          {toast.type === 'success' ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
+          {toast.msg}
+        </div>
+      )}
+
+      {/* Toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <p style={{ fontSize: 12, color: 'var(--muted)' }}>
+          {sessions.length === 0 ? 'No sessions recorded yet.' : `${sessions.length} session${sessions.length !== 1 ? 's' : ''}`}
         </p>
         <button
           onClick={loadSessions}
           disabled={loading}
-          className="flex items-center gap-1.5 text-xs text-indigo-600 hover:text-indigo-500 font-medium transition-colors"
+          style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--primary)', background: 'none', border: 'none', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.5 : 1 }}
         >
-          <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} />
+          <RefreshCw size={12} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
           Refresh
         </button>
       </div>
 
       {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div style={{ padding: '8px 12px', borderRadius: 6, fontSize: 12, color: 'var(--danger)', background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.2)', marginBottom: 12 }}>
           {error}
         </div>
       )}
 
-      {/* Session list */}
-      <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
-        {sessions.map((session) => (
-          <div key={session.sessionId} className="rounded-xl border border-slate-200 overflow-hidden">
-            {/* Session header row */}
-            <button
-              onClick={() => handleSelectSession(session.sessionId)}
-              className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50 transition-colors"
-            >
-              <div>
-                <p className="text-sm font-semibold text-slate-800">{formatDate(session.startedAt)}</p>
-                {session.context && (
-                  <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">{session.context}</p>
-                )}
-              </div>
-              {selectedId === session.sessionId ? (
-                <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" />
-              ) : (
-                <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
-              )}
-            </button>
+      {/* Date-grouped session list */}
+      {groupedSessions.length === 0 && !loading ? (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 13, textAlign: 'center' }}>
+          <p>No sessions yet</p>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {groupedSessions.map(([dateKey, daySessions]) => (
+            <div key={dateKey}>
+              {/* Date label */}
+              <p className="label" style={{ marginBottom: 6 }}>{formatDateGroup(daySessions[0].startedAt)}</p>
 
-            {/* Turns */}
-            <AnimatePresence>
-              {selectedId === session.sessionId && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="border-t border-slate-100 overflow-hidden"
-                >
-                  {loadingSession ? (
-                    <div className="flex items-center justify-center py-6">
-                      <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
+              {/* Session rows */}
+              {daySessions.map((session) => (
+                <div key={session.sessionId}>
+                  <button
+                    onClick={() => handleSelectSession(session.sessionId)}
+                    style={{
+                      width: '100%',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '8px 12px',
+                      background: selectedId === session.sessionId ? 'var(--surface)' : 'transparent',
+                      border: 'none',
+                      borderLeft: selectedId === session.sessionId ? '2px solid var(--primary)' : '2px solid transparent',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      borderRadius: '0 6px 6px 0',
+                      transition: 'background 120ms ease-out, border-color 120ms ease-out',
+                    }}
+                  >
+                    <div>
+                      <p style={{ fontSize: 13, color: 'var(--text)', fontWeight: 500 }}>
+                        {formatDate(session.startedAt)}
+                      </p>
+                      {session.context && (
+                        <p style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 280, marginTop: 2 }}>
+                          {session.context}
+                        </p>
+                      )}
                     </div>
-                  ) : turns.length === 0 ? (
-                    <p className="text-xs text-slate-400 px-4 py-4">No turns recorded for this session.</p>
-                  ) : (
-                    <div className="divide-y divide-slate-100">
-                      {turns.map((turn) => {
-                        const isSaved = savedTurnIds.has(turn.id)
-                        const isSaving = savingTurnId === turn.id
-                        return (
-                          <div key={turn.id} className="px-4 py-3 space-y-2">
-                            <p className="text-xs font-semibold text-slate-600">
-                              🎤 {turn.question}
-                            </p>
-                            <p className="text-xs text-slate-500 whitespace-pre-line leading-relaxed">
-                              {turn.answer}
-                            </p>
-                            <button
-                              onClick={() => handleMemorize(turn)}
-                              disabled={isSaved || isSaving}
-                              className={cn(
-                                'flex items-center gap-1.5 text-[11px] font-semibold rounded-lg px-3 py-1.5 transition-all',
-                                isSaved
-                                  ? 'bg-emerald-100 text-emerald-700 cursor-default'
-                                  : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200',
-                                isSaving && 'opacity-60',
-                              )}
-                            >
-                              {isSaving ? (
-                                <><Loader2 className="w-3 h-3 animate-spin" /> Saving…</>
-                              ) : isSaved ? (
-                                <><CheckCircle className="w-3 h-3" /> Memorized</>
-                              ) : (
-                                <><Brain className="w-3 h-3" /> Memorize</>
-                              )}
-                            </button>
-                          </div>
-                        )
-                      })}
+                    {selectedId === session.sessionId
+                      ? <ChevronUp size={14} color="var(--muted)" />
+                      : <ChevronDown size={14} color="var(--muted)" />}
+                  </button>
+
+                  {/* Expanded turns */}
+                  {selectedId === session.sessionId && (
+                    <div className="animate-panel" style={{ borderTop: '1px solid var(--line)', marginTop: 0 }}>
+                      {loadingSession ? (
+                        <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0' }}>
+                          <Loader2 size={16} style={{ color: 'var(--primary)', animation: 'spin 1s linear infinite' }} />
+                        </div>
+                      ) : turns.length === 0 ? (
+                        <p style={{ fontSize: 12, padding: '12px', color: 'var(--muted)' }}>No turns recorded for this session.</p>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          {turns.map((turn) => {
+                            const isSaved = savedTurnIds.has(turn.id)
+                            const isSavingThis = savingTurnId === turn.id
+                            return (
+                              <div key={turn.id} style={{ padding: '10px 12px', borderBottom: '1px solid var(--line)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)' }}>🎤 {turn.question}</p>
+                                <p style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.5, whiteSpace: 'pre-line' }}>{turn.answer}</p>
+                                <button
+                                  onClick={() => handleMemorize(turn)}
+                                  disabled={isSaved || isSavingThis}
+                                  style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                                    fontSize: 11, fontWeight: 600,
+                                    padding: '4px 10px', borderRadius: 6,
+                                    border: 'none', cursor: isSaved ? 'default' : 'pointer',
+                                    alignSelf: 'flex-start',
+                                    opacity: isSavingThis ? 0.6 : 1,
+                                    transition: 'background 120ms ease-out',
+                                    ...(isSaved
+                                      ? { background: 'rgba(16,185,129,0.12)', color: '#10b981' }
+                                      : { background: 'rgba(99,102,241,0.12)', color: '#818cf8' })
+                                  }}
+                                >
+                                  {isSavingThis ? (
+                                    <><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Saving…</>
+                                  ) : isSaved ? (
+                                    <><CheckCircle size={11} /> Memorized</>
+                                  ) : (
+                                    <><Brain size={11} /> Memorize</>
+                                  )}
+                                </button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        ))}
-      </div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
 
-      <p className="text-[11px] text-slate-400 font-medium">
-        Sessions are stored locally on disk. "Memorize" promotes a turn to the permanent Local knowledge base.
+      <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 16 }}>
+        Sessions are stored locally on disk. “Memorize” promotes a turn to the permanent knowledge base.
       </p>
     </div>
   )

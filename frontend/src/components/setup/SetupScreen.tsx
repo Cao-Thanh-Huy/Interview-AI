@@ -1,168 +1,300 @@
-import { useState } from 'react'
-import { motion } from 'framer-motion'
-import { Zap, Mic, Dumbbell, History, BrainCircuit } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Mic } from 'lucide-react'
+import { useInterviewStore } from '@/store/useInterviewStore'
+import { Sidebar, type SidebarTab } from '@/components/layout/Sidebar'
 import { TrainingPanel } from './TrainingPanel'
 import { HistoryReviewPanel } from './HistoryReviewPanel'
 import { MockInterviewPanel } from './MockInterviewPanel'
-import { useInterviewStore } from '@/store/useInterviewStore'
-import { cn } from '@/lib/utils'
+import { SettingsModal } from '@/components/activation/SettingsModal'
+import { apiUrl } from '@/lib/api'
 
-type Tab = 'setup' | 'training' | 'history' | 'mock'
-
-const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
-  { id: 'setup',    label: 'Setup Session',         icon: <Zap className="w-3.5 h-3.5" /> },
-  { id: 'training', label: 'Pre-Interview Training', icon: <Dumbbell className="w-3.5 h-3.5" /> },
-  { id: 'history',  label: 'Interview History',      icon: <History className="w-3.5 h-3.5" /> },
-  { id: 'mock',     label: 'Mock Interview',          icon: <BrainCircuit className="w-3.5 h-3.5" /> },
-]
-
-export function SetupScreen() {
-  const { context, setContext, setPhase, initSession } = useInterviewStore()
-  const [isStarting, setIsStarting] = useState(false)
-  const [activeTab, setActiveTab] = useState<Tab>('setup')
-
-  const handleStart = () => {
-    setIsStarting(true)
-    initSession()
-    setTimeout(() => setPhase('interview'), 250)
-  }
-
+// ─── Mic Orb — visual anchor ──────────────────────────────────────────────────
+function MicOrb() {
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-[#f6f8fb]">
-      {/* Background glows */}
-      <div
-        aria-hidden
-        className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] bg-indigo-500/5 rounded-full blur-[120px] pointer-events-none"
-      />
-      <div
-        aria-hidden
-        className="absolute bottom-[-10%] left-[-5%] w-[400px] h-[400px] bg-sky-400/5 rounded-full blur-[100px] pointer-events-none"
-      />
-
-      <motion.div
-        initial={{ opacity: 0, y: 24 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: 'easeOut' }}
-        className={cn(
-          "relative z-10 w-full transition-all duration-300 ease-in-out",
-          activeTab === 'setup' ? 'max-w-lg' : 'max-w-4xl'
-        )}
-      >
-        {/* Hero */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-600 to-cyan-500 shadow-xl shadow-indigo-500/20 mb-5 animate-pulse">
-            <Zap className="w-8 h-8 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold text-slate-800 mb-2 tracking-tight">IntelliView</h1>
-          <p className="text-slate-500 text-sm font-medium">Real-time AI assistance during your live interview</p>
-        </div>
-
-        {/* Tabs */}
-        <div className="flex bg-slate-100/80 rounded-2xl p-1 mb-4 gap-1">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={cn(
-                'flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs font-semibold transition-all duration-200',
-                activeTab === tab.id
-                  ? 'bg-white text-indigo-700 shadow-sm shadow-slate-200'
-                  : 'text-slate-500 hover:text-slate-700',
-              )}
-            >
-              {tab.icon}
-              <span className="hidden sm:inline">{tab.label}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* Card */}
-        <div className="glass rounded-2xl p-6 shadow-2xl shadow-slate-200/50 bg-white/70">
-          {/* Tab 1: Setup Session */}
-          {activeTab === 'setup' && (
-            <div className="space-y-6 text-center py-4">
-              {/* Animated Listening/Mic Signal Visual */}
-              <div className="relative flex items-center justify-center w-24 h-24 mx-auto mb-2">
-                {/* Outer pulsing ring */}
-                <div className="absolute inset-0 rounded-full bg-indigo-500/10 animate-ping" />
-                {/* Inner pulsing ring */}
-                <div className="absolute w-16 h-16 rounded-full bg-indigo-500/20 animate-pulse" />
-                {/* Center Core Circle with Icon */}
-                <div className="relative w-12 h-12 rounded-full bg-gradient-to-br from-indigo-600 to-indigo-700 flex items-center justify-center shadow-lg shadow-indigo-500/30">
-                  <Mic className="w-5 h-5 text-white" />
-                </div>
-              </div>
-
-              {/* Status Badge */}
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 shadow-sm">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
-                <span className="text-[11px] font-bold uppercase tracking-wider">AI READY</span>
-              </div>
-
-              {/* Core Description */}
-              <div className="max-w-xs mx-auto space-y-2">
-                <h3 className="text-base font-semibold text-slate-800">Start IntelliView</h3>
-                <p className="text-xs text-slate-400 leading-relaxed font-medium">
-                  The system will automatically listen to your interview and query the pre-trained SQLite Knowledge Base to generate real-world senior level suggestions.
-                </p>
-              </div>
-
-              <div className="border-t border-slate-100" />
-
-              <button
-                onClick={handleStart}
-                disabled={isStarting}
-                className={cn(
-                  'w-full py-4 rounded-xl font-bold text-white text-sm cursor-pointer',
-                  'bg-gradient-to-r from-indigo-600 via-indigo-700 to-cyan-600',
-                  'hover:from-indigo-500 hover:via-indigo-600 hover:to-cyan-500',
-                  'active:scale-[0.98]',
-                  'transition-all duration-200',
-                  'flex items-center justify-center gap-2',
-                  'shadow-lg shadow-indigo-600/25',
-                  'disabled:opacity-60 disabled:cursor-not-allowed',
-                )}
-              >
-                {isStarting ? (
-                  <>
-                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Initializing...
-                  </>
-                ) : (
-                  <>
-                    <Zap className="w-4 h-4" />
-                    Launch Interview Session
-                  </>
-                )}
-              </button>
-            </div>
-          )}
-
-          {/* Tab 2: Pre-Interview Training */}
-          {activeTab === 'training' && <TrainingPanel />}
-
-          {/* Tab 3: Interview History & Review */}
-          {activeTab === 'history' && <HistoryReviewPanel />}
-
-          {/* Tab 4: Mock Interview */}
-          {activeTab === 'mock' && <MockInterviewPanel />}
-        </div>
-
-        {/* Hint */}
-        {activeTab === 'setup' && (
-          <p className="text-center text-xs text-slate-400 mt-5 font-medium">
-            Press{' '}
-            <kbd className="bg-slate-200/60 px-1.5 py-0.5 rounded text-slate-600 font-mono text-[11px] border border-slate-300/30">
-              Ctrl+Shift+H
-            </kbd>{' '}
-            during interview to toggle stealth mode
-          </p>
-        )}
-      </motion.div>
+    <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      {/* Ambient radial bloom behind the circle */}
+      <div style={{
+        position: 'absolute',
+        width: 240, height: 240,
+        borderRadius: '50%',
+        background: 'radial-gradient(circle, rgba(99,102,241,0.10) 0%, transparent 70%)',
+        pointerEvents: 'none',
+      }} />
+      {/* Ring + icon */}
+      <div style={{
+        width: 128, height: 128,
+        borderRadius: '50%',
+        background: '#0d0d1c',
+        border: '1.5px solid rgba(99,102,241,0.22)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        position: 'relative', zIndex: 1,
+        boxShadow: '0 0 32px rgba(99,102,241,0.06)',
+      }}>
+        <Mic size={40} color="#ffffff" strokeWidth={1.5} />
+      </div>
     </div>
   )
 }
 
+// ─── Setup Tab ────────────────────────────────────────────────────────────────
+function SetupTab({ onStart, isStarting }: { onStart: () => void; isStarting: boolean }) {
+  const [apiOk, setApiOk] = useState<boolean | null>(null)
+  const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([])
+  const audioDeviceId = useInterviewStore((s) => s.audioDeviceId)
+  const setAudioDeviceId = useInterviewStore((s) => s.setAudioDeviceId)
+
+  // Load API key status
+  useEffect(() => {
+    fetch(apiUrl('/settings/api-keys'))
+      .then(r => r.json())
+      .then(d => setApiOk(Boolean(d.groqKeySet && d.deepgramKeySet)))
+      .catch(() => setApiOk(false))
+  }, [])
+
+  // Enumerate audio input devices — MUST stop the temp stream after to avoid keeping mic open
+  useEffect(() => {
+    let tempStream: MediaStream | null = null
+    navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      .then(stream => {
+        tempStream = stream
+        return navigator.mediaDevices.enumerateDevices()
+      })
+      .then(devices => {
+        // Stop the temp stream immediately after enumeration
+        tempStream?.getTracks().forEach(t => t.stop())
+        const inputs = devices.filter(d => d.kind === 'audioinput')
+        setAudioDevices(inputs)
+        // Auto-select loopback device if found and nothing selected yet
+        if (!audioDeviceId) {
+          const loopback = inputs.find(d =>
+            /stereo mix|what u hear|cable output|vb-audio|blackhole|loopback/i.test(d.label)
+          )
+          if (loopback) setAudioDeviceId(loopback.deviceId)
+        }
+      })
+      .catch(() => {
+        tempStream?.getTracks().forEach(t => t.stop())
+      })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const isElectron = !!(window as unknown as { electronAudio?: unknown }).electronAudio
+
+  const subtitle =
+    apiOk === false
+      ? 'Configure API keys in Settings to continue'
+      : isElectron
+        ? 'Ready · will auto-capture system audio'
+        : !audioDeviceId
+          ? 'Select an audio device below to continue'
+          : 'Ready · session will capture selected device only'
+
+  // In Electron: WASAPI loopback handles audio automatically — no device required
+  // In browser: require explicit device selection (no loopback available otherwise)
+  const canStart = isStarting === false && apiOk !== false && (isElectron || !!audioDeviceId)
+
+  const isLoopback = (label: string) =>
+    /stereo mix|what u hear|cable output|vb-audio|blackhole|loopback/i.test(label)
+
+  return (
+    <div style={{
+      flex: 1,
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      position: 'relative',
+      padding: '0 24px',
+    }}>
+
+      {/* Mic orb */}
+      <MicOrb />
+
+      {/* Heading */}
+      <h1 style={{
+        margin: '28px 0 8px',
+        fontSize: 22, fontWeight: 500,
+        color: '#c8d4e8',
+        letterSpacing: '-0.02em',
+        textAlign: 'center',
+        lineHeight: 1.2,
+      }}>
+        Ready to record
+      </h1>
+
+      {/* Subtitle */}
+      <p style={{
+        margin: '0 0 20px',
+        fontSize: 13, color: '#3a4560',
+        textAlign: 'center',
+      }}>
+        {subtitle}
+      </p>
+
+      {/* Audio device picker */}
+      {audioDevices.length > 0 && (
+        <div style={{ width: '100%', maxWidth: 320, marginBottom: 20 }}>
+          <label style={{ display: 'block', fontSize: 10, color: 'var(--muted)', letterSpacing: '0.06em', marginBottom: 6, textTransform: 'uppercase' }}>
+            Audio Source
+          </label>
+          <select
+            value={audioDeviceId ?? ''}
+            onChange={e => setAudioDeviceId(e.target.value || null)}
+            style={{
+              width: '100%',
+              padding: '8px 10px',
+              background: 'var(--surface)',
+              border: '1px solid var(--line)',
+              borderRadius: 6,
+              color: 'var(--text)',
+              fontSize: 12,
+              outline: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            <option value="">Default microphone</option>
+            {audioDevices.map(d => (
+              <option key={d.deviceId} value={d.deviceId}>
+                {isLoopback(d.label) ? '⭐ ' : ''}{d.label || `Device ${d.deviceId.slice(0, 8)}`}
+              </option>
+            ))}
+          </select>
+          {audioDeviceId && audioDevices.find(d => d.deviceId === audioDeviceId && isLoopback(d.label)) && (
+            <p style={{ margin: '6px 0 0', fontSize: 10, color: '#5b8a6b' }}>
+              ✓ Loopback device — will capture interviewer audio
+            </p>
+          )}
+          {!audioDevices.some(d => isLoopback(d.label)) && (
+            <p style={{ margin: '6px 0 0', fontSize: 10, color: '#3a4560', lineHeight: 1.5 }}>
+              Tip: Install <strong style={{ color: 'var(--text-2)' }}>VB-Cable</strong> to capture Zoom/Teams audio
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Primary CTA */}
+      <button
+        onClick={onStart}
+        disabled={!canStart}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 8,
+          padding: '12px 44px',
+          background: canStart ? '#5254cc' : '#1e2035',
+          color: canStart ? '#fff' : '#3a4560',
+          fontSize: 14, fontWeight: 600,
+          letterSpacing: '0.01em',
+          border: 'none',
+          borderRadius: 8,
+          cursor: canStart ? 'pointer' : 'not-allowed',
+          boxShadow: canStart
+            ? '0 6px 28px rgba(82,84,204,0.50), 0 1px 0 rgba(255,255,255,0.08) inset'
+            : 'none',
+          transition: 'box-shadow 150ms ease-out, background 150ms ease-out',
+        }}
+      >
+        {isStarting ? 'Starting…' : 'Start Session →'}
+      </button>
+
+      {/* Hint */}
+      <span style={{
+        position: 'absolute', bottom: 20,
+        fontSize: 11, color: '#1c2233',
+        letterSpacing: '0.04em',
+        userSelect: 'none',
+      }}>
+        Ctrl+K · command palette
+      </span>
+    </div>
+  )
+}
+
+// ─── Tab labels ───────────────────────────────────────────────────────────────
+const TAB_LABELS: Record<SidebarTab, string> = {
+  setup:    'SESSION',
+  training: 'TRAINING',
+  history:  'HISTORY',
+  mock:     'MOCK INTERVIEW',
+}
+
+// ─── SetupScreen ──────────────────────────────────────────────────────────────
+export function SetupScreen() {
+  const setPhase    = useInterviewStore((s) => s.setPhase)
+  const initSession = useInterviewStore((s) => s.initSession)
+
+  const [isStarting,   setIsStarting]   = useState(false)
+  const [activeTab,    setActiveTab]    = useState<SidebarTab>('setup')
+  const [showSettings, setShowSettings] = useState(false)
+
+  const handleStart = () => {
+    setIsStarting(true)
+    initSession()
+
+    const electronSession = (window as unknown as { electronSession?: { start: (d: unknown) => void } }).electronSession
+    if (electronSession) {
+      // Electron: 2-window mode — overlay takes over, main window hides
+      const { context, sessionId } = useInterviewStore.getState()
+      electronSession.start({ context, sessionId })
+      setIsStarting(false)  // overlay handles everything from here
+    } else {
+      // Browser fallback: single-window mode
+      setTimeout(() => setPhase('interview'), 200)
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', height: '100%' }}>
+
+      {/* Sidebar */}
+      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+
+      {/* Main */}
+      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+
+        {/* Top bar — label + status only, NO action button */}
+        <header className="app-header drag-region">
+          <span style={{
+            fontSize: 11, fontWeight: 600,
+            letterSpacing: '0.08em', color: 'var(--muted)',
+            textTransform: 'uppercase',
+          }}>
+            {TAB_LABELS[activeTab]}
+          </span>
+
+          {activeTab === 'setup' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+              <span style={{ fontSize: 12, color: '#10b981', fontWeight: 500 }}>Ready</span>
+            </div>
+          )}
+
+          {activeTab !== 'setup' && (
+            <button
+              onClick={() => setShowSettings(true)}
+              className="btn btn-ghost"
+              style={{ padding: '3px 8px', fontSize: 11 }}
+            >
+              Settings
+            </button>
+          )}
+        </header>
+
+        {/* Content */}
+        <div
+          className="animate-panel contain"
+          style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}
+        >
+          {activeTab === 'setup'    && <SetupTab onStart={handleStart} isStarting={isStarting} />}
+          {activeTab === 'training' && <TrainingPanel />}
+          {activeTab === 'history'  && <HistoryReviewPanel />}
+          {activeTab === 'mock'     && <MockInterviewPanel />}
+        </div>
+      </div>
+
+      {showSettings && (
+        <SettingsModal
+          onClose={() => setShowSettings(false)}
+          onLicenseDeactivated={() => window.location.reload()}
+        />
+      )}
+    </div>
+  )
+}

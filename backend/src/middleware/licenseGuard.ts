@@ -38,7 +38,8 @@ export async function licenseGuard(c: Context, next: Next) {
   // Whitelist: không cần license
   if (
     path === '/health' ||
-    path.startsWith('/api/license')
+    path.startsWith('/api/license') ||
+    path.startsWith('/api/debug')     // dev debug endpoint — always open
   ) {
     return next()
   }

@@ -45,7 +45,7 @@ if (Test-Path $PID_FILE) {
     Start-Sleep -Milliseconds 500
 }
 
-# Nuclear pre-start cleanup: kill ALL node.exe + any port holders
+# Nuclear pre-start cleanup: kill ALL node.exe + any port holders + zombie electron
 # This ensures clean state even after crash/zombie scenarios
 foreach ($port in @(3001, 5173)) {
     $portPid = (netstat -ano 2>$null | Select-String ":$port\s" | Select-String "LISTENING" | ForEach-Object {
@@ -54,6 +54,14 @@ foreach ($port in @(3001, 5173)) {
     if ($portPid -and $portPid -match "^\d+$") {
         taskkill /F /PID ([int]$portPid) 2>&1 | Out-Null
     }
+}
+# Kill all zombie electron.exe — they accumulate if stop.ps1 wasn't called properly
+# and lock GPUCache/DiskCache causing "Unable to move cache: Access denied" on restart
+$zombieElectron = Get-Process -Name "electron" -ErrorAction SilentlyContinue
+if ($zombieElectron -and $zombieElectron.Count -gt 0) {
+    Write-Host "  [Cleanup] Killing $($zombieElectron.Count) zombie electron process(es)..." -ForegroundColor DarkYellow
+    taskkill /F /IM electron.exe 2>&1 | Out-Null
+    Start-Sleep -Milliseconds 800   # allow cache locks to release
 }
 Start-Sleep -Milliseconds 300
 

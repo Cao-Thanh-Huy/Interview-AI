@@ -1,24 +1,15 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   IntelliView v2 — Design System
+   Philosophy: "Invisible Premium Tool" — Linear × VSCode × Arc
+   Rule: No blur. No glow. No surface-2. 2 depth levels only.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-* {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
-}
-
-*::-webkit-scrollbar {
-  width: 5px;
-}
-
-*::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-*::-webkit-scrollbar-thumb {
-  background-color: rgba(148, 163, 184, 0.4);
-  border-radius: 4px;
-}
+/* ── Reset ──────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
 
 html, body, #root {
   height: 100%;
@@ -27,39 +18,376 @@ html, body, #root {
   overflow: hidden;
 }
 
+/* ── Design Tokens ──────────────────────────────────────────────────────── */
+:root {
+  /* Depth — ONLY 2 levels. No surface-2, no nesting. */
+  --bg:           #0c0c14;    /* Level 0: app shell background */
+  --surface:      #111120;    /* Level 1: all interactive elements */
+  --surface-hover:#161628;    /* hover = brighten 2%, no extra layer */
+
+  /* Borders — ultra-subtle, not screaming */
+  --line:         rgba(255,255,255,0.04);   /* default border */
+  --line-2:       rgba(255,255,255,0.08);   /* hover / focus border */
+
+  /* Text */
+  --text:         #e2e8f0;    /* primary — 14px transcript */
+  --text-2:       #94a3b8;    /* secondary — 13px body */
+  --muted:        #475569;    /* labels, placeholders */
+
+  /* Accents — use sparingly */
+  --primary:      #6366f1;
+  --success:      #10b981;
+  --warn:         #f59e0b;
+  --danger:       #f43f5e;
+
+  /* Spacing — 4-based, no 13px/21px/27px */
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px;
+  --s5: 24px; --s6: 32px; --s7: 48px;
+
+  /* Layout */
+  --sidebar-w:    48px;                 /* tighter — Linear/Arc style */
+  --titlebar-h:   36px;                 /* matches titleBarOverlay height */
+  --header-h:     36px;
+  --winctrl-w:    138px;                /* Windows 3-button zone */
+}
+
+/* ── Ambient background (static — NEVER animated) ───────────────────────── */
 body {
-  background-color: #f6f8fb;
-  color: #0f172a;
-  font-family: 'Inter', sans-serif;
+  background:
+    /* Indigo ambient only — NO cyan (looks gaming) */
+    radial-gradient(ellipse 55% 35% at 12% 0%,
+      rgba(99,102,241,0.03) 0%, transparent 60%),
+    var(--bg);
+  color: var(--text-2);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.08) transparent;
+}
+*::-webkit-scrollbar        { width: 4px; height: 4px; }
+*::-webkit-scrollbar-track  { background: transparent; }
+*::-webkit-scrollbar-thumb  { background: rgba(255,255,255,0.08); border-radius: 4px; }
 
-@layer utilities {
-  .glass {
-    background: rgba(255, 255, 255, 0.04);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-  }
+/* ── Drag region (frameless window) ─────────────────────────────────────── */
+.drag-region {
+  -webkit-app-region: drag;
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* All interactive elements inside a drag region must have no-drag */
+.drag-region button,
+.drag-region a,
+.drag-region input,
+.drag-region [role="button"] {
+  -webkit-app-region: no-drag;
+}
 
-  .glass-hover {
-    transition: background 0.2s;
-  }
+/* ── Motion budget ───────────────────────────────────────────────────────── */
+/* Hover: background/color only */
+.transition-hover {
+  transition: background 120ms ease-out, color 120ms ease-out, border-color 120ms ease-out;
+}
+/* Panel mount */
+.animate-panel {
+  animation: panelIn 180ms ease-out both;
+}
+/* Dialog / command palette */
+.animate-dialog {
+  animation: dialogIn 200ms ease-out both;
+}
 
-  .glass-hover:hover {
-    background: rgba(255, 255, 255, 0.07);
-  }
+@keyframes panelIn  { from { opacity: 0 } to { opacity: 1 } }
+@keyframes dialogIn { from { opacity: 0; transform: translateY(-6px) } to { opacity: 1; transform: translateY(0) } }
 
-  .text-gradient {
-    background: linear-gradient(135deg, #a78bfa, #67e8f9);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-  }
+/* Transcript — ZERO animation, always instant */
+/* Do not add any animation class to transcript text. */
 
-  .glow-violet {
-    box-shadow: 0 0 40px rgba(124, 58, 237, 0.15);
+/* ── Status dot system ───────────────────────────────────────────────────── */
+.dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+/* Idle — static, no animation */
+.dot-idle    { background: var(--muted); }
+
+/* Listening — 1 pulse every 2s */
+.dot-live {
+  background: var(--danger);
+  animation: dotPulse 2s ease-in-out infinite;
+}
+@keyframes dotPulse {
+  0%, 60%, 100% { opacity: 1;   transform: scale(1);   }
+  30%           { opacity: 0.3; transform: scale(1.4); }
+}
+
+/* Thinking — slow opacity breathe */
+.dot-think {
+  background: var(--primary);
+  animation: dotBreathe 3s ease-in-out infinite;
+}
+@keyframes dotBreathe {
+  0%, 100% { opacity: 0.4; }
+  50%      { opacity: 1;   }
+}
+
+/* ── CSS containment ─────────────────────────────────────────────────────── */
+.contain { contain: layout paint; }
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+.sidebar {
+  width: var(--sidebar-w);
+  background: rgba(11,11,19,0.72);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 20px;   /* larger top padding — Arc/Linear visual balance */
+  padding-bottom: 16px;
+  flex-shrink: 0;
+}
+
+.nav-icon {
+  width: 32px; height: 32px;
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted);
+  transition: color 120ms ease-out, background 120ms ease-out;
+  position: relative;
+}
+.nav-icon:hover { color: var(--text-2); background: rgba(255,255,255,0.03); }
+.nav-icon.active {
+  color: var(--primary);
+  background: rgba(99,102,241,0.08);  /* subtle tint + border indicator */
+  box-shadow: inset 2px 0 0 var(--primary);
+}
+
+/* ── Header strip (drag region) ────────────────────────────────────── */
+.app-header {
+  height: var(--header-h);
+  border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 var(--s4);
+  /* Right-pad enough to not overlap Electron Win controls */
+  padding-right: var(--winctrl-w);
+  flex-shrink: 0;
+}
+
+/* ── Surface card ────────────────────────────────────────────────────────── */
+.surface {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.surface:hover { background: var(--surface-hover); border-color: var(--line-2); }
+
+/* ── Labels ─────────────────────────────────────────────────────────────── */
+.label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ── Dark input ─────────────────────────────────────────────────────────── */
+.input-dark {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  padding: 7px 10px;
+  outline: none;
+  width: 100%;
+  transition: border-color 120ms ease-out;
+  resize: none;
+  font-family: inherit;
+}
+.input-dark::placeholder { color: var(--muted); opacity: 0.7; }
+.input-dark:focus { border-color: rgba(99,102,241,0.35); }
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 12px; font-weight: 500;
+  transition: background 120ms ease-out, color 120ms ease-out;
+  cursor: pointer;
+  border: none;
+}
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+}
+.btn-primary:hover { background: #4f51d4; }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-2);
+  border: 1px solid var(--line);
+}
+.btn-ghost:hover { background: var(--surface-hover); border-color: var(--line-2); color: var(--text); }
+
+.btn-danger {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid rgba(244,63,94,0.2);
+}
+.btn-danger:hover { background: rgba(244,63,94,0.08); }
+
+/* ── Divider ─────────────────────────────────────────────────────────────── */
+.divider {
+  height: 1px;
+  background: var(--line);
+  margin: var(--s4) 0;
+}
+
+/* ── Command palette overlay ────────────────────────────────────────────── */
+.palette-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 999;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 120px;
+}
+.palette-panel {
+  width: 480px;
+  background: rgba(12,12,20,0.98);   /* solid dark — NO blur */
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+  overflow: hidden;
+  animation: dialogIn 180ms ease-out both;
+}
+
+/* ── Transcript text ─────────────────────────────────────────────────────── */
+.transcript-q {
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.65;
+  white-space: pre-wrap;
+  /* NO animation — instant render */
+}
+.transcript-interim {
+  font-size: 13px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* ── Feed divider ────────────────────────────────────────────────────────── */
+.feed-divider {
+  height: 1px;
+  background: var(--line);
+  margin: var(--s4) 0;
+}
+
+/* ── Suggestion list ─────────────────────────────────────────────────────── */
+.suggestion-list {
+  list-style: none;
+  margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.suggestion-list li {
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.5;
+  padding-left: 14px;
+  position: relative;
+}
+.suggestion-list li::before {
+  content: '•';
+  position: absolute; left: 0;
+  color: var(--muted);
+}
+
+/* ── Toast / status badge ───────────────────────────────────────────────── */
+.badge-success {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 600;
+  color: var(--success);
+  padding: 2px 8px; border-radius: 99px;
+  background: rgba(16,185,129,0.10);
+  border: 1px solid rgba(16,185,129,0.18);
+}
+.badge-muted {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 600;
+  color: var(--muted);
+  padding: 2px 8px; border-radius: 99px;
+  background: rgba(71,85,105,0.12);
+  border: 1px solid rgba(71,85,105,0.2);
+}
+
+/* ── UiMode: focused-notes ──────────────────────────────────────────────── */
+[data-mode="focused-notes"] {
+  --bg:           #f9f8f4;
+  --surface:      #ffffff;
+  --surface-hover:#f3f2ee;
+  --line:         rgba(0,0,0,0.08);
+  --line-2:       rgba(0,0,0,0.14);
+  --text:         #1a1a1a;
+  --text-2:       #525252;
+  --muted:        #9e9e9e;
+  font-family: 'Georgia', 'Times New Roman', serif;
+}
+[data-mode="focused-notes"] body {
+  background: var(--bg);
+}
+
+/* ── UiMode: ide-camouflage ─────────────────────────────────────────────── */
+[data-mode="ide-camouflage"] {
+  --bg:           #1e1e1e;
+  --surface:      #252526;
+  --surface-hover:#2a2d2e;
+  --line:         rgba(255,255,255,0.08);
+  --line-2:       rgba(255,255,255,0.13);
+  --text:         #d4d4d4;
+  --text-2:       #9d9d9d;
+  --muted:        #6e7681;
+  font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+}
+
+/* ── Shortcut table (Setup tab) ─────────────────────────────────────────── */
+.shortcut-table {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 16px;
+  width: 100%;
+}
+.shortcut-key {
+  font-family: 'Cascadia Code', 'Consolas', ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--text-2);
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  padding: 2px 6px;
+  white-space: nowrap;
+  letter-spacing: 0;
+  display: inline-block;
+  align-self: center;
+}
+.shortcut-desc {
+  font-size: 12px;
+  color: var(--muted);
+  align-self: center;
+}
+
+/* ── prefers-reduced-motion ─────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
   }
 }

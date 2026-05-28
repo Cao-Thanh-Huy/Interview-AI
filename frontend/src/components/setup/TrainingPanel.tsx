@@ -18,6 +18,14 @@ interface TrainedPair {
   aliasCount: number
 }
 
+// ─── Dark input styles ─────────────────────────────────────────────────────────
+const inputCls = "w-full rounded-xl px-4 py-3 text-sm outline-none transition-all resize-none placeholder:text-[#4a5568] focus:ring-1 focus:ring-indigo-500/50"
+const inputStyle = {
+  background: 'rgba(255,255,255,0.04)',
+  border: '1px solid rgba(255,255,255,0.08)',
+  color: '#f1f5f9',
+}
+
 export function TrainingPanel() {
   const context = useInterviewStore((s) => s.context)
 
@@ -33,7 +41,6 @@ export function TrainingPanel() {
   const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
-  // --- Alias state ---
   const [suggestedAliases, setSuggestedAliases] = useState<SuggestedAlias[]>([])
   const [manualAliasInput, setManualAliasInput] = useState('')
   const [isSuggestingAliases, setIsSuggestingAliases] = useState(false)
@@ -43,7 +50,6 @@ export function TrainingPanel() {
     setTimeout(() => setToast(null), 3500)
   }
 
-  // Tất cả alias phrases đã chọn (từ suggest + thêm tay)
   const allAliasPhrases = suggestedAliases.map((a) => a.phrase)
 
   const removeAlias = useCallback((phrase: string) => {
@@ -55,7 +61,6 @@ export function TrainingPanel() {
     if (!trimmed || trimmed.length < 3) return
     if (allAliasPhrases.includes(trimmed)) return
     if (suggestedAliases.length >= ALIAS_MAX) return
-    // Manual aliases không có impact info
     setSuggestedAliases((prev) => [...prev, { phrase: trimmed, impact: [] }])
     setManualAliasInput('')
   }, [manualAliasInput, allAliasPhrases, suggestedAliases.length])
@@ -67,7 +72,7 @@ export function TrainingPanel() {
     try {
       const result = await suggestAliases(question.trim(), context)
       setSuggestedAliases(result.aliases.slice(0, ALIAS_MAX))
-    } catch (err) {
+    } catch {
       showToast('error', 'Failed to suggest aliases')
     } finally {
       setIsSuggestingAliases(false)
@@ -141,8 +146,8 @@ export function TrainingPanel() {
       setSuggestedAliases([])
       setManualAliasInput('')
       const label = result.status === 'updated'
-        ? `Knowledge updated! (${aliasCount} alias${aliasCount !== 1 ? 'es' : ''})`
-        : `Saved! (${aliasCount} alias${aliasCount !== 1 ? 'es' : ''})`
+        ? `Knowledge updated! (${aliasCount} aliases)`
+        : `Saved! (${aliasCount} aliases)`
       showToast('success', label)
     } catch (err) {
       showToast('error', (err as Error).message ?? 'Save failed')
@@ -151,7 +156,6 @@ export function TrainingPanel() {
     }
   }, [question, draftAnswer, translatedAnswer, showTranslation, allAliasPhrases])
 
-  // Impact warning level cho 1 alias
   const getAliasWarningLevel = (alias: SuggestedAlias): 'warn' | 'note' | 'safe' => {
     if (!alias.impact || alias.impact.length === 0) return 'safe'
     const topScore = alias.impact[0].score
@@ -161,51 +165,50 @@ export function TrainingPanel() {
   }
 
   return (
-    <div className="space-y-5">
+    <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 0, overflowY: 'auto', flex: 1 }}>
       {/* Toast */}
-      <AnimatePresence>
-        {toast && (
-          <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className={cn(
-              'flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium',
-              toast.type === 'success'
-                ? 'bg-emerald-500/10 text-emerald-700 border border-emerald-500/20'
-                : 'bg-red-500/10 text-red-700 border border-red-500/20',
-            )}
-          >
-            {toast.type === 'success'
-              ? <CheckCircle className="w-4 h-4 shrink-0" />
-              : <AlertCircle className="w-4 h-4 shrink-0" />}
-            {toast.msg}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {toast && (
+        <div
+          className="animate-panel"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 500,
+            marginBottom: 16,
+            ...(toast.type === 'success'
+              ? { background: 'rgba(16,185,129,0.10)', color: '#10b981', border: '1px solid rgba(16,185,129,0.2)' }
+              : { background: 'rgba(244,63,94,0.10)', color: '#f43f5e', border: '1px solid rgba(244,63,94,0.2)' })
+          }}
+        >
+          {toast.type === 'success' ? <CheckCircle className="w-3.5 h-3.5 shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 shrink-0" />}
+          {toast.msg}
+        </div>
+      )}
 
-      {/* Question input */}
-      <div className="space-y-2">
-        <label className="block text-sm font-medium text-slate-700">❓ Practice Question</label>
+      {/* Step 1 — Question */}
+      <div style={{ marginBottom: 16 }}>
+        <p className="label" style={{ marginBottom: 8 }}>Step 1 — Question</p>
         <textarea
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           placeholder="e.g. Tell me about a time you handled a difficult stakeholder."
           rows={2}
-          className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-slate-800 text-sm placeholder:text-slate-400 resize-none outline-none focus:border-indigo-500/60 transition-all shadow-sm"
+          className="input-dark"
+          style={{ fontFamily: 'inherit', resize: 'none' }}
         />
       </div>
 
-      {/* Alias Section */}
-      <div className="space-y-3">
+      <div className="divider" />
+
+      {/* Step 2 — Aliases */}
+      <div style={{ marginBottom: 16 }}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-slate-700">🔀 Aliases</label>
+            <span className="label">Aliases</span>
             <span className={cn(
               'text-xs font-semibold px-2 py-0.5 rounded-full',
               suggestedAliases.length >= ALIAS_MAX
-                ? 'bg-amber-100 text-amber-700'
-                : 'bg-slate-100 text-slate-500',
+                ? 'bg-amber-500/15 text-amber-400'
+                : 'bg-white/5 text-[var(--muted)]',
             )}>
               {suggestedAliases.length}/{ALIAS_MAX}
             </span>
@@ -213,45 +216,28 @@ export function TrainingPanel() {
           <button
             onClick={handleSuggestAliases}
             disabled={!question.trim() || isSuggestingAliases || suggestedAliases.length >= ALIAS_MAX}
-            className={cn(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border',
-              'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100',
-              'disabled:opacity-50 disabled:cursor-not-allowed',
-            )}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ background: 'rgba(139,92,246,0.12)', color: '#a78bfa', border: '1px solid rgba(139,92,246,0.2)' }}
           >
             {isSuggestingAliases
-              ? <><Loader2 className="w-3 h-3 animate-spin" /> Scanning KB…</>
+              ? <><Loader2 className="w-3 h-3 animate-spin" /> Scanning…</>
               : <><Wand2 className="w-3 h-3" /> Auto-suggest</>}
           </button>
         </div>
 
         {/* Alias chips */}
         <AnimatePresence mode="popLayout">
-          {/* Loading skeleton */}
           {isSuggestingAliases && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="flex flex-wrap gap-2"
-            >
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-wrap gap-2">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="h-7 w-32 rounded-full bg-slate-200 animate-pulse" />
+                <div key={i} className="h-7 w-32 rounded-full animate-pulse" style={{ background: 'rgba(255,255,255,0.06)' }} />
               ))}
             </motion.div>
           )}
-
-          {/* Actual chips */}
           {!isSuggestingAliases && suggestedAliases.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              className="flex flex-wrap gap-2"
-            >
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-wrap gap-2">
               {suggestedAliases.map((alias) => {
                 const warnLevel = getAliasWarningLevel(alias)
-                const topImpact = alias.impact?.[0]
-
                 return (
                   <motion.div
                     key={alias.phrase}
@@ -259,68 +245,18 @@ export function TrainingPanel() {
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.85 }}
                     layout
-                    className="group relative"
+                    className="flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full text-xs font-medium"
+                    style={{
+                      background: warnLevel === 'warn' ? 'rgba(245,158,11,0.12)' : warnLevel === 'note' ? 'rgba(234,179,8,0.1)' : 'rgba(99,102,241,0.12)',
+                      border: `1px solid ${warnLevel === 'warn' ? 'rgba(245,158,11,0.25)' : warnLevel === 'note' ? 'rgba(234,179,8,0.2)' : 'rgba(99,102,241,0.25)'}`,
+                      color: warnLevel === 'warn' ? '#fbbf24' : warnLevel === 'note' ? '#eab308' : '#818cf8',
+                    }}
                   >
-                    <div className={cn(
-                      'flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full text-xs font-medium border transition-all',
-                      warnLevel === 'warn'
-                        ? 'bg-amber-50 text-amber-800 border-amber-300'
-                        : warnLevel === 'note'
-                        ? 'bg-yellow-50 text-yellow-800 border-yellow-200'
-                        : 'bg-indigo-50 text-indigo-700 border-indigo-200',
-                    )}>
-                      {warnLevel === 'warn' && (
-                        <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" />
-                      )}
-                      <span className="max-w-[180px] truncate">{alias.phrase}</span>
-                      <button
-                        onClick={() => removeAlias(alias.phrase)}
-                        className={cn(
-                          'ml-0.5 p-0.5 rounded-full transition-colors',
-                          warnLevel === 'warn'
-                            ? 'hover:bg-amber-200 text-amber-600'
-                            : warnLevel === 'note'
-                            ? 'hover:bg-yellow-200 text-yellow-600'
-                            : 'hover:bg-indigo-200 text-indigo-500',
-                        )}
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-
-                    {/* Tooltip: retrieval impact warning */}
-                    {topImpact && topImpact.score >= 0.80 && (
-                      <div className="absolute bottom-full left-0 mb-1.5 z-20 hidden group-hover:block w-64">
-                        <div className={cn(
-                          'rounded-lg px-3 py-2 text-xs shadow-lg border',
-                          warnLevel === 'warn'
-                            ? 'bg-amber-50 border-amber-200 text-amber-800'
-                            : 'bg-yellow-50 border-yellow-200 text-yellow-800',
-                        )}>
-                          <p className="font-semibold mb-1">
-                            {warnLevel === 'warn' ? '⚠️ High overlap' : '💡 Possible overlap'}
-                          </p>
-                          <p>
-                            Similar to{' '}
-                            <span className="font-medium">"{topImpact.phrase}"</span>{' '}
-                            ({(topImpact.score * 100).toFixed(0)}% similar)
-                          </p>
-                          {topImpact.unitQuestion && (
-                            <p className="text-[10px] mt-0.5 opacity-70">
-                              In: "{topImpact.unitQuestion}"
-                            </p>
-                          )}
-                          <p className="text-[10px] mt-1 opacity-60">
-                            You can still keep this alias if intentional.
-                          </p>
-                        </div>
-                        {/* Arrow */}
-                        <div className={cn(
-                          'w-2 h-2 rotate-45 border-r border-b ml-3 -mt-1',
-                          warnLevel === 'warn' ? 'bg-amber-50 border-amber-200' : 'bg-yellow-50 border-yellow-200',
-                        )} />
-                      </div>
-                    )}
+                    {warnLevel === 'warn' && <AlertTriangle className="w-3 h-3 shrink-0" />}
+                    <span className="max-w-[180px] truncate">{alias.phrase}</span>
+                    <button onClick={() => removeAlias(alias.phrase)} className="ml-0.5 p-0.5 rounded-full hover:bg-white/10 transition-colors">
+                      <X className="w-3 h-3" />
+                    </button>
                   </motion.div>
                 )
               })}
@@ -336,69 +272,51 @@ export function TrainingPanel() {
               onChange={(e) => setManualAliasInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addManualAlias() } }}
               placeholder="+ Add alias manually (Enter to add)"
-              className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-800 text-xs placeholder:text-slate-400 outline-none focus:border-indigo-400/60 transition-all shadow-sm"
+              className="flex-1 rounded-lg px-3 py-2 text-xs outline-none transition-all"
+              style={{ ...inputStyle, fontSize: 12 }}
             />
             <button
               onClick={addManualAlias}
               disabled={!manualAliasInput.trim() || manualAliasInput.trim().length < 3}
-              className="p-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className="p-2 rounded-lg transition-colors disabled:opacity-40"
+              style={{ background: 'rgba(255,255,255,0.06)', color: '#94a3b8' }}
             >
               <Plus className="w-4 h-4" />
             </button>
           </div>
         )}
-
-        {suggestedAliases.length > 0 && (
-          <p className="text-[11px] text-slate-400 leading-relaxed">
-            🟢 Safe alias — 🟡 Note: possible overlap — 🟠 Warning: high similarity with existing KB. Hover for details.
-            Aliases are saved <strong>only after</strong> you click Save.
-          </p>
-        )}
       </div>
 
-      {/* Generate button */}
-      <button
-        onClick={handleGenerate}
-        disabled={!question.trim() || isGenerating}
-        className={cn(
-          'w-full py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all duration-200',
-          'bg-indigo-600 text-white hover:bg-indigo-500',
-          'disabled:opacity-50 disabled:cursor-not-allowed',
-          'shadow-md shadow-indigo-600/20',
-        )}
-      >
-        {isGenerating
-          ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating…</>
-          : <><Sparkles className="w-4 h-4" /> AI Draft Answer</>}
-      </button>
+      <div className="divider" />
 
-      {/* Draft answer editor */}
-      <AnimatePresence>
+      {/* Step 3 — Generate */}
+      <div style={{ marginBottom: 16 }}>
+        <p className="label" style={{ marginBottom: 8 }}>Step 3 — Generate</p>
+        <button
+          onClick={handleGenerate}
+          disabled={!question.trim() || isGenerating}
+          className="btn btn-primary w-full py-2.5 flex items-center justify-center gap-2"
+          style={{ opacity: (!question.trim() || isGenerating) ? 0.4 : 1 }}
+        >
+          {isGenerating
+            ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating…</>
+            : <><Sparkles className="w-4 h-4" /> AI Draft Answer</>}
+        </button>
+
+        {/* Draft answer editor */}
         {(draftAnswer || isGenerating) && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="space-y-2"
-          >
-            <div className="flex items-center justify-between">
-              <label className="block text-sm font-medium text-slate-700">✏️ Edit &amp; Refine Answer</label>
+          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <label className="label">Edit & Refine Answer</label>
               {draftAnswer && !isGenerating && (
                 <button
                   onClick={handleToggleTranslate}
                   disabled={isTranslating}
-                  className={cn(
-                    'p-1 px-2.5 rounded-lg transition-all flex items-center gap-1.5 text-xs font-semibold leading-none cursor-pointer border',
-                    showTranslation
-                      ? 'text-indigo-600 bg-indigo-50 border-indigo-200 hover:bg-indigo-100'
-                      : 'text-slate-500 bg-slate-50 border-slate-200 hover:text-slate-700 hover:bg-slate-100',
-                  )}
-                  title={showTranslation ? 'Show English' : 'Dịch sang tiếng Việt'}
+                  className="btn btn-ghost"
+                  style={{ fontSize: 11, padding: '3px 8px', opacity: isTranslating ? 0.5 : 1 }}
                 >
-                  {isTranslating
-                    ? <Loader2 className="w-3 h-3 animate-spin text-indigo-500" />
-                    : <Languages className="w-3.5 h-3.5" />}
-                  <span>{showTranslation ? 'Gốc (English)' : 'Dịch (Vietnamese)'}</span>
+                  {isTranslating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Languages className="w-3.5 h-3.5" />}
+                  {showTranslation ? 'English' : 'Dịch (VN)'}
                 </button>
               )}
             </div>
@@ -408,52 +326,50 @@ export function TrainingPanel() {
                 if (showTranslation) setTranslatedAnswer(e.target.value)
                 else setDraftAnswer(e.target.value)
               }}
-              rows={10}
+              rows={8}
               placeholder={isGenerating ? 'AI is generating…' : 'Edit your answer here…'}
-              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-slate-800 text-sm resize-y outline-none focus:border-indigo-500/60 transition-all shadow-sm font-mono min-h-[160px]"
+              className="input-dark"
+              style={{ fontFamily: 'monospace', fontSize: 12, resize: 'vertical', minHeight: 140 }}
             />
             <button
               onClick={handleSave}
               disabled={(showTranslation ? !translatedAnswer.trim() : !draftAnswer.trim()) || isSaving}
-              className={cn(
-                'w-full py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all duration-200',
-                'bg-emerald-600 text-white hover:bg-emerald-500',
-                'disabled:opacity-50 disabled:cursor-not-allowed',
-                'shadow-md shadow-emerald-600/20',
-              )}
+              className="btn w-full py-2.5 flex items-center justify-center gap-2"
+              style={{
+                background: 'var(--success)', color: 'white', borderRadius: 8, fontWeight: 600, fontSize: 13,
+                opacity: ((showTranslation ? !translatedAnswer.trim() : !draftAnswer.trim()) || isSaving) ? 0.4 : 1
+              }}
             >
               {isSaving
                 ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
                 : <><Save className="w-4 h-4" /> Save to Knowledge Base{allAliasPhrases.length > 0 ? ` + ${allAliasPhrases.length} alias${allAliasPhrases.length !== 1 ? 'es' : ''}` : ''}</>}
             </button>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
 
-      {/* Saved pairs this session */}
+      </div>
+
+      {/* Saved this session */}
       {savedPairs.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-            Saved this session ({savedPairs.length})
-          </p>
-          <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+        <div style={{ marginTop: 8 }}>
+          <div className="divider" />
+          <p className="label" style={{ marginBottom: 8 }}>Saved this session ({savedPairs.length})</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 180, overflowY: 'auto' }}>
             {savedPairs.map((pair) => (
               <div
                 key={pair.id}
-                className="rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-3 text-xs space-y-1"
+                style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 6, padding: '8px 12px' }}
               >
-                <p className="font-semibold text-slate-700 line-clamp-1">Q: {pair.question}</p>
-                <p className="text-slate-500 line-clamp-2 whitespace-pre-line">{pair.answer}</p>
+                <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Q: {pair.question}</p>
+                <p style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'pre-line', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{pair.answer}</p>
                 {pair.aliasCount > 0 && (
-                  <p className="text-indigo-500 text-[11px]">
-                    + {pair.aliasCount} alias{pair.aliasCount !== 1 ? 'es' : ''} indexed
-                  </p>
+                  <p style={{ fontSize: 11, color: 'var(--primary)', marginTop: 2 }}>+ {pair.aliasCount} aliases indexed</p>
                 )}
                 <button
                   onClick={() => setSavedPairs((prev) => prev.filter((p) => p.id !== pair.id))}
-                  className="flex items-center gap-1 text-red-400 hover:text-red-600 transition-colors text-[11px] mt-1"
+                  style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--danger)', opacity: 0.6, marginTop: 4, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
                 >
-                  <Trash2 className="w-3 h-3" /> Remove from list
+                  <Trash2 className="w-3 h-3" /> Remove
                 </button>
               </div>
             ))}
@@ -461,8 +377,8 @@ export function TrainingPanel() {
         </div>
       )}
 
-      <p className="text-[11px] text-slate-400 font-medium">
-        Saved answers are semantically indexed with multi-alias retrieval. Use Auto-suggest to maximize coverage across different question phrasings.
+      <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
+        Saved answers are semantically indexed with multi-alias retrieval.
       </p>
     </div>
   )

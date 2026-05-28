@@ -1,4 +1,4 @@
-# stop.ps1 - Stop backend + frontend (Windows PowerShell)
+# stop.ps1 - Stop backend + frontend + electron (Windows PowerShell)
 $ROOT     = Split-Path -Parent $MyInvocation.MyCommand.Path
 $PID_FILE = Join-Path $ROOT ".pids"
 
@@ -51,6 +51,15 @@ foreach ($port in @(3001, 5173)) {
             Write-Host "  [OK] Cleaned up orphaned process on port $port (PID $portPid)" -ForegroundColor DarkYellow
         }
     }
+}
+
+# --- 3. Kill ALL electron.exe (they accumulate as zombies across restarts) ---
+$electronProcs = Get-Process -Name "electron" -ErrorAction SilentlyContinue
+if ($electronProcs -and $electronProcs.Count -gt 0) {
+    taskkill /F /IM electron.exe 2>&1 | Out-Null
+    Write-Host "  [OK] Electron stopped ($($electronProcs.Count) instance(s))" -ForegroundColor Green
+} else {
+    Write-Host "  [--] Electron already stopped" -ForegroundColor Gray
 }
 
 Write-Host ""
