@@ -1,4 +1,4 @@
-/* ─── Overlay CSS — ultra-minimal, stealth-first ─────────────────────────── */
+/* ─── Overlay CSS ─────────────────────────────────────────────────────────── */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
 
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
@@ -17,27 +17,119 @@ body {
   background: transparent;
 }
 
-/* ─── Main container — height animates between states ─────────────────────── */
+/* ─── Main container ─────────────────────────────────────────────────────────
+   Uses max-height transition so content drives the height.
+   Window is 600px tall but transparent outside this container.            */
 .overlay-container {
+  position: relative;
   width: 100%;
-  background: rgba(7, 9, 20, 0.91);
-  -webkit-backdrop-filter: blur(18px) saturate(180%);
-  backdrop-filter: blur(18px) saturate(180%);
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.055);
+  max-height: 0;
   overflow: hidden;
-  transition: height 200ms cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  /* flex column so hub-feed can use flex:1 + min-height:0 for proper scroll */
+  display: flex;
+  flex-direction: column;
+  background: rgb(8 10 22 / var(--hub-bg-alpha, 0.93));
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  backdrop-filter: blur(20px) saturate(180%);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+  transition: max-height 240ms cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 200ms ease;
+  opacity: 0;
+}
+.overlay-container.visible {
+  /* max-height is overridden inline (hubHeight state) when visible */
+  max-height: 560px;
+  opacity: 1;
 }
 
-/* ─── Top bar ─────────────────────────────────────────────────────────────── */
-.overlay-bar {
-  height: 48px;
+/* ─── Resize handle — right edge, 14px wide, very easy to grab ──────────── */
+.resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  cursor: ew-resize;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-app-region: no-drag;
+  transition: background 140ms;
+}
+.resize-handle:hover  { background: rgba(82, 84, 204, 0.25); }
+.resize-handle:active { background: rgba(82, 84, 204, 0.45); }
+
+/* Grip dots inside resize handle */
+.resize-grip {
+  width: 3px;
+  height: 28px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  transition: background 140ms;
+}
+.resize-handle:hover .resize-grip  { background: rgba(82, 84, 204, 0.7); }
+.resize-handle:active .resize-grip { background: #5254cc; }
+
+/* ─── Drag bar — top zone, prominent, easy to grab ──────────────────────── */
+.drag-bar {
+  height: 38px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 12px;
-  -webkit-app-region: drag;
+  padding: 0 10px 0 8px;
+  cursor: grab;
+  -webkit-app-region: no-drag;  /* IPC drag, not CSS native */
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 120ms;
+  flex-shrink: 0;
+}
+.drag-bar:hover   { background: rgba(255, 255, 255, 0.03); }
+.drag-bar:active  { cursor: grabbing; background: rgba(255, 255, 255, 0.05); }
+
+/* 6-dot grip pattern */
+.drag-bar__dots {
+  display: grid;
+  grid-template-columns: repeat(3, 3px);
+  gap: 2.5px;
+  flex-shrink: 0;
+  opacity: 0.25;
+  transition: opacity 120ms;
+}
+.drag-bar:hover .drag-bar__dots { opacity: 0.55; }
+.drag-bar__dots span {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+/* Status: dot + audio bars + label */
+.drag-bar__status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  -webkit-app-region: no-drag;
+}
+
+.drag-bar__label {
+  font-size: 10px;
+  color: rgba(140, 155, 190, 0.55);
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+/* Right-side controls (font +/-, stop) — must NOT be drag region */
+.drag-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
 }
 
 /* Recording dot */
@@ -59,42 +151,136 @@ body {
   50%       { opacity: 0.4; box-shadow: none; }
 }
 
-/* Audio level bars */
-.audio-bars {
+/* Audio bars */
+.audio-bars { display: flex; align-items: flex-end; gap: 2px; height: 13px; flex-shrink: 0; }
+.audio-bar  { width: 3px; border-radius: 2px; transition: background 70ms; }
+
+/* Icon buttons */
+.icon-btn {
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: rgba(100, 115, 150, 0.45);
+  font-size: 10px;
+  border-radius: 4px;
   display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 14px;
-  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  transition: color 130ms, background 130ms;
+  -webkit-app-region: no-drag;
+  letter-spacing: -0.02em;
 }
-.audio-bar {
-  width: 3px;
-  border-radius: 2px;
-  transition: background 70ms;
+.icon-btn:hover       { color: #c8d4e8; background: rgba(255,255,255,0.07); }
+.icon-btn.stop:hover  { color: #ef4444; }
+
+/* Larger variant for A− A+ and stop */
+.icon-btn--lg {
+  width: 30px;
+  height: 28px;
+  font-size: 12px;
+  font-weight: 500;
 }
 
-/* Transcript text (LISTENING state) */
-.transcript-line {
-  flex: 1;
-  font-size: 11.5px;
-  color: rgba(170, 185, 215, 0.45);
+/* Separator between button groups */
+.action-sep {
+  width: 1px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+  margin: 0 1px;
+}
+
+/* ─── Turn feed — scrollable ──────────────────────────────────────────────── */
+.hub-feed {
+  flex: 1;          /* take remaining space after drag-bar and bottom handle */
+  min-height: 0;    /* CRITICAL: without this, flex child won't shrink to scroll */
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 14px 6px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(82, 84, 204, 0.28) transparent;
+}
+.hub-feed::-webkit-scrollbar       { width: 4px; }
+.hub-feed::-webkit-scrollbar-track { background: transparent; }
+.hub-feed::-webkit-scrollbar-thumb { background: rgba(82,84,204,0.3); border-radius: 2px; }
+
+/* ─── Turn card ─────────────────────────────────────────────────────────── */
+.hub-turn {
+  padding: 9px 0 9px 10px;
+  border-left: 2px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 6px;
+  opacity: 0.48;
+  transition: opacity 200ms;
+}
+.hub-turn:last-child { margin-bottom: 0; }
+
+/* Latest (active) turn is fully visible */
+.hub-turn--latest {
+  opacity: 1;
+  border-left-color: rgba(82, 84, 204, 0.6);
+}
+
+/* Question line */
+.hub-q {
+  font-size: calc(var(--font-size, 13px) * 0.85);
+  color: rgba(160, 175, 210, 0.65);
   font-style: italic;
+  margin-bottom: 5px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  letter-spacing: 0.01em;
-  min-width: 0;
+  padding-right: 16px; /* avoid resize handle */
 }
 
-/* Thinking indicator (THINKING state) */
-.thinking-line {
-  flex: 1;
+/* Bullets container */
+.hub-bullets {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-right: 16px;
+}
+
+.hub-bullet {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  animation: fade-in-up 160ms ease both;
+}
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.bullet-dot  { color: #5254cc; font-size: 14px; line-height: 1.5; flex-shrink: 0; }
+.bullet-text { font-size: var(--font-size, 13px); color: #c4d0e8; line-height: 1.55; letter-spacing: 0.01em; }
+
+/* Streaming bullet placeholder */
+.hub-bullet--streaming { opacity: 0.5; }
+.streaming-cursor {
+  display: inline-block;
+  width: 6px;
+  height: 13px;
+  background: #5254cc;
+  border-radius: 1px;
+  animation: blink 1s ease-in-out infinite;
+  vertical-align: middle;
+}
+@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.2; } }
+
+/* Inline thinking (while generating first bullet) */
+.hub-thinking-inline {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 11px;
+  font-size: 10.5px;
   color: rgba(120, 130, 165, 0.55);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
+  padding: 2px 0;
 }
 .thinking-dot {
   width: 5px;
@@ -105,60 +291,64 @@ body {
   animation: think 1.4s ease-in-out infinite;
 }
 @keyframes think {
-  0%, 100% { opacity: 0.3; transform: scale(0.7);  }
-  50%       { opacity: 1;   transform: scale(1.2);  }
+  0%,100% { opacity: 0.3; transform: scale(0.7); }
+  50%      { opacity: 1;   transform: scale(1.2); }
 }
 
-/* Bar right-side actions */
-.bar-actions {
+/* ─── Interim caption (live speech) ─────────────────────────────────────── */
+.hub-interim {
   display: flex;
   align-items: center;
-  gap: 3px;
-  margin-left: auto;
-  flex-shrink: 0;
-  -webkit-app-region: no-drag;
+  gap: 7px;
+  padding: 6px 16px 6px 10px;
+  font-size: calc(var(--font-size, 13px) * 0.88);
+  color: rgba(170, 185, 215, 0.45);
+  font-style: italic;
+  letter-spacing: 0.01em;
+  border-left: 2px solid rgba(255, 255, 255, 0.04);
 }
-.icon-btn {
-  width: 22px;
-  height: 22px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  color: rgba(100, 115, 150, 0.4);
+.hub-interim__cursor {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #22c55e;
+  flex-shrink: 0;
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+/* ─── Empty state ──────────────────────────────────────────────────── */
+.hub-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
   font-size: 11px;
-  border-radius: 4px;
+  color: rgba(120, 135, 170, 0.4);
+  letter-spacing: 0.04em;
+}
+
+/* ─── Bottom resize handle ────────────────────────────────────────────── */
+.resize-handle-bottom {
+  height: 14px;
+  flex-shrink: 0;
+  cursor: ns-resize;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 130ms, background 130ms;
   -webkit-app-region: no-drag;
+  transition: background 140ms;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
 }
-.icon-btn:hover            { color: #c8d4e8; background: rgba(255,255,255,0.07); }
-.icon-btn.stop:hover       { color: #ef4444; }
+.resize-handle-bottom:hover  { background: rgba(82, 84, 204, 0.18); }
+.resize-handle-bottom:active { background: rgba(82, 84, 204, 0.35); }
 
-/* ─── Divider ─────────────────────────────────────────────────────────────── */
-.divider {
-  height: 1px;
-  background: rgba(255, 255, 255, 0.05);
+/* Horizontal grip bar inside bottom handle */
+.resize-grip-h {
+  width: 32px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  transition: background 140ms;
 }
-
-/* ─── Answer section (ANSWER state) ──────────────────────────────────────── */
-.overlay-answer {
-  padding: 10px 14px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.bullet-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 3px 0;
-  animation: fade-in-up 170ms ease both;
-}
-@keyframes fade-in-up {
-  from { opacity: 0; transform: translateY(5px); }
-  to   { opacity: 1; transform: translateY(0);   }
-}
-.bullet-dot  { color: #5254cc; font-size: 15px; line-height: 1.5; flex-shrink: 0; }
-.bullet-text { font-size: 13px; color: #c4d0e8; line-height: 1.55; letter-spacing: 0.01em; }
+.resize-handle-bottom:hover  .resize-grip-h { background: rgba(82, 84, 204, 0.7); }
+.resize-handle-bottom:active .resize-grip-h { background: #5254cc; }

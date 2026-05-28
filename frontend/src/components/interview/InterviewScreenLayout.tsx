@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Mic, MicOff, EyeOff, Square, Monitor } from 'lucide-react'
+import { Mic, MicOff, EyeOff, Square, Monitor, Settings2 } from 'lucide-react'
 import { useInterviewStore } from '@/store/useInterviewStore'
 import { useUiMode } from '@/store/useUiMode'
 import { StatusDot } from './StatusDot'
@@ -76,6 +76,75 @@ function TurnCardInner({ question, answer, isGenerating, isLast }: TurnCardProps
 }
 const TurnCard = React.memo(TurnCardInner)
 
+// ─── MiniHub Preferences popover ─────────────────────────────────────────────
+function MiniHubPrefs({ onClose }: { onClose: () => void }) {
+  const [font, setFont]   = useState(() => { const v = Number(localStorage.getItem('hub-font')); return (v>=10&&v<=18)?v:13 })
+  const [width, setWidth] = useState(() => { const v = Number(localStorage.getItem('hub-width')); return (v>=280&&v<=700)?v:440 })
+  const [histMax, setHistMax] = useState(() => { const v = Number(localStorage.getItem('hub-hist')); return [3,5,8,10].includes(v)?v:8 })
+
+  const applyFont  = (v: number) => { setFont(v);  localStorage.setItem('hub-font', String(v)) }
+  const applyWidth = (v: number) => {
+    setWidth(v)
+    localStorage.setItem('hub-width', String(v))
+    // Send IPC to resize overlay window in real-time if Electron is running
+    ;(window as any).electronOverlay?.resizeWidth?.(v)
+  }
+  const applyHist  = (v: number) => { setHistMax(v); localStorage.setItem('hub-hist', String(v)) }
+
+  return (
+    <div style={{
+      position: 'absolute', right: 0, top: '100%', marginTop: 4, zIndex: 999,
+      background: 'var(--surface)', border: '1px solid var(--line)',
+      borderRadius: 10, padding: '14px 16px', width: 230,
+      boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+      display: 'flex', flexDirection: 'column', gap: 14,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)', letterSpacing: '0.06em' }}>MINIHUB PREFERENCES</span>
+        <button className="btn btn-ghost" onClick={onClose} style={{ padding: '2px 6px', fontSize: 10 }}>✕</button>
+      </div>
+
+      {/* Font size */}
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <span style={{ fontSize: 11, color: 'var(--text-2)', display: 'flex', justifyContent: 'space-between' }}>
+          <span>Font size</span><span style={{ color: 'var(--primary)' }}>{font}px</span>
+        </span>
+        <input type="range" min={10} max={18} value={font}
+          onChange={e => applyFont(Number(e.target.value))}
+          style={{ width: '100%', accentColor: 'var(--primary)' }}
+        />
+        <span style={{ fontSize: 9, color: 'var(--muted)', display: 'flex', justifyContent: 'space-between' }}><span>10px</span><span>Ctrl+Scroll on HUD</span><span>18px</span></span>
+      </label>
+
+      {/* Width */}
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <span style={{ fontSize: 11, color: 'var(--text-2)', display: 'flex', justifyContent: 'space-between' }}>
+          <span>HUD width</span><span style={{ color: 'var(--primary)' }}>{width}px</span>
+        </span>
+        <input type="range" min={280} max={700} step={10} value={width}
+          onChange={e => applyWidth(Number(e.target.value))}
+          style={{ width: '100%', accentColor: 'var(--primary)' }}
+        />
+        <span style={{ fontSize: 9, color: 'var(--muted)', display: 'flex', justifyContent: 'space-between' }}><span>280px</span><span>Drag right edge on HUD</span><span>700px</span></span>
+      </label>
+
+      {/* History count */}
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <span style={{ fontSize: 11, color: 'var(--text-2)' }}>History items kept</span>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {[3, 5, 8, 10].map(v => (
+            <button key={v}
+              onClick={() => applyHist(v)}
+              className={histMax === v ? 'btn' : 'btn btn-ghost'}
+              style={{ flex: 1, padding: '3px 0', fontSize: 11, fontWeight: histMax===v?600:400 }}
+            >{v}</button>
+          ))}
+        </div>
+      </label>
+    </div>
+  )
+}
+
 // ─── TopBar ───────────────────────────────────────────────────────────────────
 interface TopBarProps {
   status: DeepgramStatus
@@ -86,9 +155,11 @@ interface TopBarProps {
   onToggleMute: () => void
   onStop: () => void
   isAlwaysOnTop: boolean
+  showHubPrefs: boolean
+  onToggleHubPrefs: () => void
 }
 
-function TopBarInner({ status, audioSource, audioLevel, startTime, isMuted, onToggleMute, onStop, isAlwaysOnTop }: TopBarProps) {
+function TopBarInner({ status, audioSource, audioLevel, startTime, isMuted, onToggleMute, onStop, isAlwaysOnTop, showHubPrefs, onToggleHubPrefs }: TopBarProps) {
   const elapsed = useElapsed(startTime)
   const { toggleStealth } = useInterviewStore()
 
@@ -129,7 +200,7 @@ function TopBarInner({ status, audioSource, audioLevel, startTime, isMuted, onTo
       </div>
 
       {/* Right: actions */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, position: 'relative' }}>
         <button className="btn btn-ghost" onClick={onToggleMute} style={{ padding: '4px 8px', fontSize: 11 }}>
           {isMuted ? <MicOff size={12} /> : <Mic size={12} />}
           {isMuted ? 'Unmute' : 'Mute'}
@@ -137,9 +208,19 @@ function TopBarInner({ status, audioSource, audioLevel, startTime, isMuted, onTo
         <button className="btn btn-ghost" onClick={toggleStealth} style={{ padding: '4px 8px', fontSize: 11 }}>
           <EyeOff size={12} /> Hide
         </button>
+        {/* MiniHub Preferences button */}
+        <button
+          className={`btn btn-ghost${showHubPrefs ? ' active' : ''}`}
+          onClick={onToggleHubPrefs}
+          title="MiniHub Preferences"
+          style={{ padding: '4px 6px', fontSize: 11 }}
+        >
+          <Settings2 size={12} /> Hub
+        </button>
         <button className="btn btn-danger" onClick={onStop} style={{ padding: '4px 8px', fontSize: 11 }}>
           <Square size={10} strokeWidth={0} fill="currentColor" /> Stop
         </button>
+        {showHubPrefs && <MiniHubPrefs onClose={onToggleHubPrefs} />}
       </div>
     </header>
   )
@@ -163,6 +244,7 @@ export function InterviewScreenLayout({ status, audioSource, audioLevel, startTi
   const currentInterimCaption = useInterviewStore((s) => s.currentInterimCaption)
   const stealthMode = useInterviewStore((s) => s.stealthMode)
   const { isAlwaysOnTop } = useUiMode()
+  const [showHubPrefs, setShowHubPrefs] = useState(false)
 
   const feedRef = useRef<HTMLDivElement>(null)
   const [manualText, setManualText] = useState('')
@@ -237,6 +319,8 @@ export function InterviewScreenLayout({ status, audioSource, audioLevel, startTi
         onToggleMute={onToggleMute}
         onStop={onStop}
         isAlwaysOnTop={isAlwaysOnTop}
+        showHubPrefs={showHubPrefs}
+        onToggleHubPrefs={() => setShowHubPrefs(v => !v)}
       />
 
       {/* Unified cognitive feed */}

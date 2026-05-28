@@ -43,4 +43,9 @@ contextBridge.exposeInMainWorld('electronOverlay', {
   stop: () => ipcRenderer.send('session:stop'),
   // Toggle click-through (hover-to-activate)
   setInteractive: (interactive) => ipcRenderer.send('overlay:interactive', interactive),
+  // Resize overlay window width (clamped 280–700 in main process)
+  resizeWidth: (w) => ipcRenderer.send('overlay:resize-width', w),
+  // Native IPC drag — polling-based, survives mouse leaving window
+  dragStart: () => ipcRenderer.send('overlay:drag-start'),
+  dragEnd:   () => ipcRenderer.send('overlay:drag-end'),
 })

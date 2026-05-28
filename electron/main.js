@@ -41,6 +41,7 @@ let overlayWindow     = null
 let hoverInterval     = null   // cursor polling for click-through
 let overlayReady      = false  // true once overlay did-finish-load
 let pendingSessionData = null  // buffered session data if overlay wasn't ready yet
+let dragInterval      = null   // IPC-based native drag polling
 
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -192,7 +193,7 @@ async function createOverlay() {
 
   overlayWindow = new BrowserWindow({
     width: W,
-    height: 280,           // max height — CSS controls visible height
+    height: 600,           // tall enough for history panel — CSS/max-height controls visible area
     x: Math.floor((width - W) / 2),
     y: 80,                 // top-center, just below webcam area
     frame: false,
@@ -291,6 +292,37 @@ ipcMain.on('log:file', (_, msg) => {
       `[${new Date().toISOString().slice(11, 23)}] ${msg}\n`
     )
   } catch {}
+})
+
+// ─── Overlay UX IPC ───────────────────────────────────────────────────────────
+
+// Resize overlay width — called by resize-handle drag in renderer
+ipcMain.on('overlay:resize-width', (_, newWidth) => {
+  if (!overlayWindow) return
+  const clamped = Math.min(700, Math.max(280, Math.round(newWidth)))
+  const [, h] = overlayWindow.getSize()
+  overlayWindow.setSize(clamped, h)
+})
+
+// Native drag via polling — more robust than CSS -webkit-app-region: drag
+// because it survives mouse leaving the window (which would kill setIgnoreMouseEvents)
+ipcMain.on('overlay:drag-start', () => {
+  if (!overlayWindow) return
+  const [winX, winY] = overlayWindow.getPosition()
+  const startCursor  = screen.getCursorScreenPoint()
+  const offsetX = startCursor.x - winX
+  const offsetY = startCursor.y - winY
+
+  if (dragInterval) { clearInterval(dragInterval); dragInterval = null }
+  dragInterval = setInterval(() => {
+    if (!overlayWindow) { clearInterval(dragInterval); dragInterval = null; return }
+    const cur = screen.getCursorScreenPoint()
+    overlayWindow.setPosition(cur.x - offsetX, cur.y - offsetY)
+  }, 16) // ~60 fps
+})
+
+ipcMain.on('overlay:drag-end', () => {
+  if (dragInterval) { clearInterval(dragInterval); dragInterval = null }
 })
 
 // ─── IPC Handlers ──────────────────────────────────────────────────────────────
