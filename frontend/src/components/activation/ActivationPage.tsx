@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Shield, ShieldCheck, Loader2, AlertTriangle, Zap } from 'lucide-react'
+import { apiUrl } from '@/lib/api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface LicenseStatusResponse {
@@ -18,7 +19,7 @@ function SplashScreen() {
         <Zap className="w-7 h-7 text-white" />
       </div>
       <div className="text-center">
-        <h1 className="text-2xl font-bold text-slate-800 tracking-tight">Interview AI</h1>
+        <h1 className="text-2xl font-bold text-slate-800 tracking-tight">IntelliView</h1>
         <p className="text-sm text-slate-500 mt-1">Connecting to system...</p>
       </div>
       <Loader2 className="w-5 h-5 text-indigo-500 animate-spin mt-2" />
@@ -45,7 +46,7 @@ function ActivationPage({ hwid, errorMessage, onActivated }: ActivationPageProps
     setFeedbackMsg('')
 
     try {
-      const res = await fetch('/api/license/activate', {
+      const res = await fetch(apiUrl('/license/activate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: key.trim() }),
@@ -97,7 +98,7 @@ function ActivationPage({ hwid, errorMessage, onActivated }: ActivationPageProps
             </div>
             <div className="text-center">
               <h1 className="text-xl font-bold text-slate-800">Activate Software</h1>
-              <p className="text-sm text-slate-500 mt-1">Interview AI · License Key required to continue</p>
+              <p className="text-sm text-slate-500 mt-1">IntelliView · License Key required to continue</p>
             </div>
           </div>
 
@@ -201,7 +202,7 @@ export function useLicenseCheck() {
 
   const check = useCallback(async (attempt = 0) => {
     try {
-      const res = await fetch('/api/license/status')
+      const res = await fetch(apiUrl('/license/status'))
       if (!res.ok) throw new Error('non-ok response')
       const data: LicenseStatusResponse = await res.json()
 

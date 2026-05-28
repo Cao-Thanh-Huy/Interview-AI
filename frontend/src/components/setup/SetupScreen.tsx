@@ -1,21 +1,19 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Zap, Mic, Dumbbell, History, BrainCircuit, Settings } from 'lucide-react'
+import { Zap, Mic, Dumbbell, History, BrainCircuit } from 'lucide-react'
 import { TrainingPanel } from './TrainingPanel'
 import { HistoryReviewPanel } from './HistoryReviewPanel'
 import { MockInterviewPanel } from './MockInterviewPanel'
 import { useInterviewStore } from '@/store/useInterviewStore'
 import { cn } from '@/lib/utils'
-import { SettingsPanel } from '@/components/activation/SettingsPanel'
 
-type Tab = 'setup' | 'training' | 'history' | 'mock' | 'settings'
+type Tab = 'setup' | 'training' | 'history' | 'mock'
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'setup',    label: 'Setup Session',         icon: <Zap className="w-3.5 h-3.5" /> },
   { id: 'training', label: 'Pre-Interview Training', icon: <Dumbbell className="w-3.5 h-3.5" /> },
   { id: 'history',  label: 'Interview History',      icon: <History className="w-3.5 h-3.5" /> },
   { id: 'mock',     label: 'Mock Interview',          icon: <BrainCircuit className="w-3.5 h-3.5" /> },
-  { id: 'settings', label: 'Settings',               icon: <Settings className="w-3.5 h-3.5" /> },
 ]
 
 export function SetupScreen() {
@@ -55,7 +53,7 @@ export function SetupScreen() {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-600 to-cyan-500 shadow-xl shadow-indigo-500/20 mb-5 animate-pulse">
             <Zap className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-slate-800 mb-2 tracking-tight">Interview Copilot</h1>
+          <h1 className="text-3xl font-bold text-slate-800 mb-2 tracking-tight">IntelliView</h1>
           <p className="text-slate-500 text-sm font-medium">Real-time AI assistance during your live interview</p>
         </div>
 
@@ -101,12 +99,12 @@ export function SetupScreen() {
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                 </span>
-                <span className="text-[11px] font-bold uppercase tracking-wider">AI Copilot Ready</span>
+                <span className="text-[11px] font-bold uppercase tracking-wider">AI READY</span>
               </div>
 
               {/* Core Description */}
               <div className="max-w-xs mx-auto space-y-2">
-                <h3 className="text-base font-semibold text-slate-800">Start Your Live Copilot</h3>
+                <h3 className="text-base font-semibold text-slate-800">Start IntelliView</h3>
                 <p className="text-xs text-slate-400 leading-relaxed font-medium">
                   The system will automatically listen to your interview and query the pre-trained SQLite Knowledge Base to generate real-world senior level suggestions.
                 </p>
@@ -131,7 +129,7 @@ export function SetupScreen() {
                 {isStarting ? (
                   <>
                     <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    Initializing Copilot...
+                    Initializing...
                   </>
                 ) : (
                   <>
@@ -151,9 +149,6 @@ export function SetupScreen() {
 
           {/* Tab 4: Mock Interview */}
           {activeTab === 'mock' && <MockInterviewPanel />}
-
-          {/* Tab 5: Settings */}
-          {activeTab === 'settings' && <SettingsPanel />}
         </div>
 
         {/* Hint */}

@@ -7,7 +7,12 @@ import type {
   SuggestAliasesResult,
 } from './types'
 
-const BASE = '/api'
+// In dev mode (Vite), VITE_API_BASE is empty → relative path uses Vite proxy
+// In Electron (file:// protocol), VITE_API_BASE = 'http://localhost:3001' → absolute URL
+const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api'
+
+/** Helper for components that call fetch() directly */
+export const apiUrl = (path: string) => `${BASE}${path}`
 
 export async function fetchDeepgramKey(): Promise<{ key: string }> {
   const res = await fetch(`${BASE}/deepgram`)

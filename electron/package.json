@@ -1,0 +1,67 @@
+{
+  "name": "intelliview",
+  "version": "1.0.0",
+  "description": "IntelliView – Real-time AI Interview Assistant",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "build": "electron-builder --win --x64",
+    "build:dir": "electron-builder --win --x64 --dir"
+  },
+  "build": {
+    "appId": "com.intelliview.app",
+    "productName": "IntelliView",
+    "copyright": "Copyright © 2025 IntelliView",
+    "directories": {
+      "output": "../dist-electron"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowDirChange": true,
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "IntelliView"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "icon.ico"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/frontend-dist",
+        "to": "frontend-dist",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "resources/app",
+        "to": "app",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "resources/runtime",
+        "to": "runtime",
+        "filter": ["**/*"]
+      }
+    ]
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  }
+}

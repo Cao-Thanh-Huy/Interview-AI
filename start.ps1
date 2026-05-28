@@ -82,7 +82,7 @@ try {
 
 Write-Host "Detected package manager: $pkgManager (Executable: $pkgPath)" -ForegroundColor Gray
 Write-Host ""
-Write-Host "Starting Interview Copilot..." -ForegroundColor Cyan
+Write-Host "Starting IntelliView..." -ForegroundColor Cyan
 Write-Host ""
 
 $backendRoot  = Join-Path $ROOT "backend"
@@ -231,7 +231,61 @@ if ($shareMode -and $lanIp) {
 }
 Write-Host ""
 
-# Wait then open browser
-Start-Sleep -Seconds 2
-$openUrl = if ($shareMode -and $lanIp) { "http://$lanIp`:5173" } else { "http://localhost:5173" }
-Start-Process $openUrl
+# Wait for backend to be ready (TCP check on :3001, up to 15s) then launch Electron
+Write-Host "  Waiting for backend to start..." -ForegroundColor Gray
+$backendReady = $false
+for ($i = 0; $i -lt 30; $i++) {
+    Start-Sleep -Milliseconds 500
+    try {
+        $tcp = New-Object System.Net.Sockets.TcpClient
+        $tcp.Connect("127.0.0.1", 3001)
+        $tcp.Close()
+        $backendReady = $true
+        break
+    } catch {}
+}
+if ($backendReady) {
+    Write-Host "  Backend ready." -ForegroundColor DarkGray
+} else {
+    Write-Host "  Backend not ready yet, launching Electron anyway..." -ForegroundColor Yellow
+}
+
+# Also give Vite a moment
+Start-Sleep -Seconds 1
+
+Write-Host "  Launching Electron window..." -ForegroundColor Cyan
+
+$electronBin = Join-Path $ROOT "electron\node_modules\electron\dist\electron.exe"
+$electronDir  = Join-Path $ROOT "electron"
+
+if (Test-Path $electronBin) {
+    # Clear NODE_OPTIONS — Electron's embedded Node does not support --use-system-ca
+    $savedNodeOptions = $env:NODE_OPTIONS
+    $env:NODE_OPTIONS  = ''
+    $env:INTELLIVIEW_DEV = '1'
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName         = $electronBin
+    $psi.Arguments        = "."
+    $psi.WorkingDirectory = $electronDir
+    $psi.UseShellExecute  = $false
+    $psi.CreateNoWindow   = $false
+    $eProc = New-Object System.Diagnostics.Process
+    $eProc.StartInfo = $psi
+    $null = $eProc.Start()
+
+    # Restore NODE_OPTIONS for anything else in this session
+    $env:NODE_OPTIONS = $savedNodeOptions
+
+    # Add electron PID to .pids so stop.ps1 can kill it too
+    Add-Content $PID_FILE $eProc.Id
+    Write-Host "  [Electron]  PID $($eProc.Id)" -ForegroundColor Green
+} else {
+    Write-Host "  [Electron] Binary not found - opening browser fallback" -ForegroundColor Yellow
+    $openUrl = if ($shareMode -and $lanIp) { "http://$lanIp`:5173" } else { "http://localhost:5173" }
+    Start-Process $openUrl
+}
+
+Write-Host ""
+Write-Host "  Close the IntelliView window or run .\stop.ps1 to stop everything." -ForegroundColor Gray
+Write-Host ""

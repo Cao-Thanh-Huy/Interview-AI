@@ -4,6 +4,7 @@ import {
   Settings, X, Key, Shield, CheckCircle2, AlertTriangle,
   Loader2, Eye, EyeOff, ExternalLink, RefreshCw
 } from 'lucide-react'
+import { apiUrl } from '@/lib/api'
 
 interface SettingsModalProps {
   onLicenseDeactivated?: () => void
@@ -134,7 +135,7 @@ function ApiKeysTab() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    fetch('/api/settings/api-keys').then(r => r.json()).then(setStatus).catch(() => {})
+    fetch(apiUrl('/settings/api-keys')).then(r => r.json()).then(setStatus).catch(() => {})
   }, [])
 
   const handleSave = useCallback(async () => {
@@ -144,7 +145,7 @@ function ApiKeysTab() {
     }
     setSaving(true); setError('');    setSaved(false)
     try {
-      const res = await fetch('/api/settings/api-keys', {
+      const res = await fetch(apiUrl('/settings/api-keys'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ groqKey: groqKey.trim(), deepgramKey: deepgramKey.trim() }),
@@ -249,13 +250,13 @@ function LicenseTab({ onDeactivated }: { onDeactivated: () => void }) {
   const [confirm, setConfirm] = useState(false)
 
   useEffect(() => {
-    fetch('/api/license/status').then(r => r.json()).then(setInfo).catch(() => {})
+    fetch(apiUrl('/license/status')).then(r => r.json()).then(setInfo).catch(() => {})
   }, [])
 
   const handleDeactivate = useCallback(async () => {
     setLoading(true)
     try {
-      await fetch('/api/license/deactivate', { method: 'POST' })
+      await fetch(apiUrl('/license/deactivate'), { method: 'POST' })
       onDeactivated()
     } catch {
       setLoading(false)

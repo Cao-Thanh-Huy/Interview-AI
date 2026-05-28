@@ -12,6 +12,7 @@ export default defineConfig(async () => {
 
   return {
     plugins,
+    base: './',  // Required for Electron file:// loading
     resolve: {
       alias: { '@': path.resolve(__dirname, './src') },
     },

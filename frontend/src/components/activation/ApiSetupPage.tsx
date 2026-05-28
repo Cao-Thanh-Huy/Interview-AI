@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { Key, ExternalLink, CheckCircle2, Loader2, AlertTriangle, Eye, EyeOff } from 'lucide-react'
+import { apiUrl } from '@/lib/api'
 
 interface ApiKeyStatus {
   groqKeySet: boolean
@@ -22,7 +23,7 @@ export function ApiSetupPage({ onComplete }: ApiSetupPageProps) {
 
   // Kiểm tra keys hiện tại
   useEffect(() => {
-    fetch('/api/settings/api-keys')
+    fetch(apiUrl('/settings/api-keys'))
       .then(r => r.json())
       .then((data: ApiKeyStatus) => setExisting(data))
       .catch(() => {})
@@ -37,7 +38,7 @@ export function ApiSetupPage({ onComplete }: ApiSetupPageProps) {
     setStatus('loading')
     setMessage('')
     try {
-      const res = await fetch('/api/settings/api-keys', {
+      const res = await fetch(apiUrl('/settings/api-keys'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ groqKey: groqKey.trim(), deepgramKey: deepgramKey.trim() }),
@@ -247,7 +248,7 @@ export function useApiKeysCheck() {
 
   const check = useCallback(async () => {
     try {
-      const res = await fetch('/api/settings/api-keys')
+      const res = await fetch(apiUrl('/settings/api-keys'))
       const data: ApiKeyStatus = await res.json()
       setKeysReady(data.groqKeySet && data.deepgramKeySet)
     } catch {

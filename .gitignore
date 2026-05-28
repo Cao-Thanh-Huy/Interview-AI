@@ -65,8 +65,8 @@ backend/test/
 # ── Production build artifacts ────────────────────────────
 backend/dist-pkg/
 backend/dist-cjs/
-Release_Package/
-installer/output/
+dist-electron/
+electron/resources/
 release_out.txt
 release_err.txt
 
