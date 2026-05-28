@@ -212,17 +212,14 @@ body {
 /* ─── Turn card ─────────────────────────────────────────────────────────── */
 .hub-turn {
   padding: 9px 0 9px 10px;
-  border-left: 2px solid rgba(255, 255, 255, 0.06);
+  border-left: 2px solid rgba(255, 255, 255, 0.08);
   margin-bottom: 6px;
-  opacity: 0.48;
-  transition: opacity 200ms;
 }
 .hub-turn:last-child { margin-bottom: 0; }
 
-/* Latest (active) turn is fully visible */
+/* Latest (active) turn — highlighted border */
 .hub-turn--latest {
-  opacity: 1;
-  border-left-color: rgba(82, 84, 204, 0.6);
+  border-left-color: rgba(82, 84, 204, 0.7);
 }
 
 /* Question line */
@@ -352,3 +349,56 @@ body {
 }
 .resize-handle-bottom:hover  .resize-grip-h { background: rgba(82, 84, 204, 0.7); }
 .resize-handle-bottom:active .resize-grip-h { background: #5254cc; }
+
+/* ─── Light theme ────────────────────────────────────────────────────────────
+   Toggle by adding class .hub-theme--light on .overlay-container             */
+
+.hub-theme--light {
+  background: rgb(246 247 252 / var(--hub-bg-alpha, 0.97));
+  border-color: rgba(0, 0, 0, 0.10);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.18);
+}
+
+/* Drag bar */
+.hub-theme--light .drag-bar {
+  border-bottom-color: rgba(0, 0, 0, 0.07);
+}
+.hub-theme--light .drag-bar:hover   { background: rgba(0, 0, 0, 0.02); }
+.hub-theme--light .drag-bar__dots span { background: #1e2030; }
+.hub-theme--light .drag-bar__label  { color: rgba(60, 70, 100, 0.55); }
+
+/* Buttons */
+.hub-theme--light .icon-btn         { color: rgba(60, 80, 130, 0.5); }
+.hub-theme--light .icon-btn:hover   { color: #1e2030; background: rgba(0, 0, 0, 0.07); }
+.hub-theme--light .icon-btn.stop:hover { color: #dc2626; }
+.hub-theme--light .action-sep       { background: rgba(0, 0, 0, 0.10); }
+
+/* Status dot dim */
+.hub-theme--light .status-dot.dim   { background: rgba(100, 110, 140, 0.30); }
+
+/* Turn feed */
+.hub-theme--light .hub-feed {
+  scrollbar-color: rgba(82, 84, 204, 0.25) transparent;
+}
+
+/* Turn cards */
+.hub-theme--light .hub-turn         { border-left-color: rgba(0, 0, 0, 0.08); }
+.hub-theme--light .hub-turn--latest { border-left-color: rgba(82, 84, 204, 0.55); }
+.hub-theme--light .hub-q            { color: rgba(60, 75, 110, 0.60); }
+.hub-theme--light .bullet-text      { color: #1e2030; }
+.hub-theme--light .bullet-dot       { color: #5254cc; }
+
+/* Thinking */
+.hub-theme--light .hub-thinking-inline { color: rgba(80, 90, 130, 0.55); }
+
+/* Interim caption */
+.hub-theme--light .hub-interim      { color: rgba(60, 75, 110, 0.50); border-left-color: rgba(0,0,0,0.05); }
+
+/* Empty state */
+.hub-theme--light .hub-empty        { color: rgba(80, 100, 150, 0.45); }
+
+/* Resize handles */
+.hub-theme--light .resize-grip      { background: rgba(0, 0, 0, 0.12); }
+.hub-theme--light .resize-grip-h    { background: rgba(0, 0, 0, 0.10); }
+.hub-theme--light .resize-handle:hover        { background: rgba(82, 84, 204, 0.15); }
+.hub-theme--light .resize-handle-bottom:hover { background: rgba(82, 84, 204, 0.10); }

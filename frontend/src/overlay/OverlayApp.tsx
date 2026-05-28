@@ -97,6 +97,11 @@ export function OverlayApp() {
     return (v >= 0.2 && v <= 1.0) ? v : 0.93
   })
 
+  // Theme — dark / light toggle, persist to localStorage
+  const [hubTheme, setHubTheme] = useState<'dark' | 'light'>(() =>
+    (localStorage.getItem('hub-theme') === 'light') ? 'light' : 'dark'
+  )
+
   // Width — resize handle, persist to localStorage
   const [hubWidth, setHubWidth] = useState(() => {
     const v = Number(localStorage.getItem('hub-width'))
@@ -250,6 +255,15 @@ export function OverlayApp() {
     })
   }, [])
 
+  // ── Theme toggle ───────────────────────────────────────────────────────
+  const toggleTheme = useCallback(() => {
+    setHubTheme(prev => {
+      const next = prev === 'dark' ? 'light' : 'dark'
+      localStorage.setItem('hub-theme', next)
+      return next
+    })
+  }, [])
+
   // ── Resize handle (right edge — width) ───────────────────────────────────
   const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -315,7 +329,7 @@ export function OverlayApp() {
 
   return (
     <div
-      className="overlay-container visible"
+      className={`overlay-container visible${hubTheme === 'light' ? ' hub-theme--light' : ''}`}
       style={{
         width: hubWidth,
         maxHeight: hubHeight,
@@ -345,13 +359,17 @@ export function OverlayApp() {
           </span>
         </div>
 
-        {/* Right controls: A− A+ | ◐− ◐+ | Stop */}
+        {/* Right controls: A− A+ | ◑− ◑+ | ☀/☾ | Stop */}
         <div className="drag-bar__actions">
-          <button className="icon-btn icon-btn--lg" onClick={() => changeFont(-1)}    title="Smaller text">A−</button>
-          <button className="icon-btn icon-btn--lg" onClick={() => changeFont(1)}     title="Larger text">A+</button>
+          <button className="icon-btn icon-btn--lg" onClick={() => changeFont(-1)}      title="Smaller text">A−</button>
+          <button className="icon-btn icon-btn--lg" onClick={() => changeFont(1)}       title="Larger text">A+</button>
           <div className="action-sep" />
           <button className="icon-btn icon-btn--lg" onClick={() => changeOpacity(-0.1)} title="More transparent">◑−</button>
           <button className="icon-btn icon-btn--lg" onClick={() => changeOpacity(0.1)}  title="More opaque">◑+</button>
+          <div className="action-sep" />
+          <button className="icon-btn icon-btn--lg" onClick={toggleTheme} title={hubTheme === 'dark' ? 'Switch to light' : 'Switch to dark'}>
+            {hubTheme === 'dark' ? '☀' : '☾'}
+          </button>
           <div className="action-sep" />
           <button className="icon-btn icon-btn--lg stop" onClick={handleStop} title="Stop session">■</button>
         </div>
