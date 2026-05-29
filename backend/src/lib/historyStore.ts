@@ -10,6 +10,7 @@ export interface SessionMetadata {
   sessionId: string
   startedAt: string
   context: string
+  firstQuestion?: string  // first turn question — for UI preview
 }
 
 export interface TurnEntry {
@@ -71,6 +72,20 @@ export function listSessions(): SessionMetadata[] {
       }
     })
     .filter((m): m is SessionMetadata => m !== null)
+    .map((m) => {
+      // Peek first turn for UI preview
+      try {
+        const turnsFile = path.join(HISTORY_BASE, m.sessionId, 'turns.jsonl')
+        if (fs.existsSync(turnsFile)) {
+          const firstLine = fs.readFileSync(turnsFile, 'utf-8').split('\n').find(Boolean)
+          if (firstLine) {
+            const turn = JSON.parse(firstLine) as TurnEntry
+            if (turn.question) m.firstQuestion = turn.question
+          }
+        }
+      } catch { /* non-fatal */ }
+      return m
+    })
     .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
 }
 

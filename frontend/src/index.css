@@ -21,18 +21,18 @@ html, body, #root {
 /* ── Design Tokens ──────────────────────────────────────────────────────── */
 :root {
   /* Depth — ONLY 2 levels. No surface-2, no nesting. */
-  --bg:           #0c0c14;    /* Level 0: app shell background */
-  --surface:      #111120;    /* Level 1: all interactive elements */
-  --surface-hover:#161628;    /* hover = brighten 2%, no extra layer */
+  --bg:           #13131f;    /* Level 0: app shell background */
+  --surface:      #1a1b2e;    /* Level 1: all interactive elements */
+  --surface-hover:#1f2038;    /* hover = brighten 2%, no extra layer */
 
   /* Borders — ultra-subtle, not screaming */
-  --line:         rgba(255,255,255,0.04);   /* default border */
-  --line-2:       rgba(255,255,255,0.08);   /* hover / focus border */
+  --line:         rgba(255,255,255,0.07);   /* default border */
+  --line-2:       rgba(255,255,255,0.12);   /* hover / focus border */
 
   /* Text */
   --text:         #e2e8f0;    /* primary — 14px transcript */
   --text-2:       #94a3b8;    /* secondary — 13px body */
-  --muted:        #475569;    /* labels, placeholders */
+  --muted:        #5a6a82;    /* labels, placeholders */
 
   /* Accents — use sparingly */
   --primary:      #6366f1;
@@ -137,6 +137,22 @@ body {
 @keyframes dotBreathe {
   0%, 100% { opacity: 0.4; }
   50%      { opacity: 1;   }
+}
+
+/* Mic orb — ambient glow bloom */
+@keyframes micGlow {
+  0%, 100% { opacity: 0.08; transform: scale(1);    }
+  50%       { opacity: 0.22; transform: scale(1.06); }
+}
+/* Mic orb — outer pulse ring */
+@keyframes micPulse {
+  0%, 100% { opacity: 0.14; transform: scale(1);    }
+  50%       { opacity: 0.32; transform: scale(1.10); }
+}
+/* Mic icon subtle breathe */
+@keyframes micIconBreathe {
+  0%, 100% { opacity: 0.82; }
+  50%       { opacity: 1;   }
 }
 
 /* ── CSS containment ─────────────────────────────────────────────────────── */

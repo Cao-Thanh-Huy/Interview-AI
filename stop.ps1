@@ -53,13 +53,21 @@ foreach ($port in @(3001, 5173)) {
     }
 }
 
-# --- 3. Kill ALL electron.exe (they accumulate as zombies across restarts) ---
+# --- 3. Kill ALL electron.exe & IntelliView.exe (they accumulate as zombies across restarts) ---
 $electronProcs = Get-Process -Name "electron" -ErrorAction SilentlyContinue
 if ($electronProcs -and $electronProcs.Count -gt 0) {
     taskkill /F /IM electron.exe 2>&1 | Out-Null
     Write-Host "  [OK] Electron stopped ($($electronProcs.Count) instance(s))" -ForegroundColor Green
 } else {
     Write-Host "  [--] Electron already stopped" -ForegroundColor Gray
+}
+
+$ivProcs = Get-Process -Name "IntelliView" -ErrorAction SilentlyContinue
+if ($ivProcs -and $ivProcs.Count -gt 0) {
+    taskkill /F /IM IntelliView.exe 2>&1 | Out-Null
+    Write-Host "  [OK] IntelliView stopped ($($ivProcs.Count) instance(s))" -ForegroundColor Green
+} else {
+    Write-Host "  [--] IntelliView already stopped" -ForegroundColor Gray
 }
 
 Write-Host ""

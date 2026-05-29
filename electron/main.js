@@ -17,6 +17,22 @@ app.commandLine.appendSwitch('remote-debugging-port', '9222')
 const USER_DATA_PATH = path.join(__dirname, '..', '.electron-cache')
 app.setPath('userData', USER_DATA_PATH)
 
+// ─── Single Instance Lock ──────────────────────────────────────────────────────
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  console.log('[Electron] Another instance is already running. Quitting.')
+  app.quit()
+  process.exit(0)
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+}
+
 // ─── Paths ─────────────────────────────────────────────────────────────────────
 const isDev = !app.isPackaged
 
@@ -120,7 +136,16 @@ async function createWindow() {
     return { action: 'deny' }
   })
 
-  mainWindow.on('closed', () => { mainWindow = null })
+  mainWindow.on('closed', () => {
+    mainWindow = null
+    // Since the main window is the primary UI window, closing it must terminate the entire application cleanly.
+    // This destroys the hidden overlayWindow, kills the backendProcess, and exits the Electron process completely.
+    if (overlayWindow) {
+      overlayWindow.destroy()
+      overlayWindow = null
+    }
+    app.quit()
+  })
 
   // ── Pipe renderer console to file (dev only) ────────────────────────────────
   if (isDev) {

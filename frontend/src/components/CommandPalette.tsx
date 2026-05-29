@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useInterviewStore } from '@/store/useInterviewStore'
-import { useUiMode, type UiMode } from '@/store/useUiMode'
+import { useUiMode } from '@/store/useUiMode'
 
 // Electron IPC helper (safe — fallback when not in Electron)
 const win = typeof window !== 'undefined' ? (window as any).electronWindow : null
@@ -24,7 +24,7 @@ function CommandPaletteInner({ isOpen, onClose }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
 
   const { phase, setPhase, toggleStealth } = useInterviewStore()
-  const { setMode, setAlwaysOnTop } = useUiMode()
+  const { setAlwaysOnTop } = useUiMode()
 
   const setOpacity = useCallback((v: number) => {
     win?.setOpacity(v)
@@ -63,25 +63,6 @@ function CommandPaletteInner({ isOpen, onClose }: Props) {
     { id: 'op75', group: 'Window', label: 'Opacity 75%', action: () => { setOpacity(0.75); onClose() } },
     { id: 'op50', group: 'Window', label: 'Opacity 50%', action: () => { setOpacity(0.5); onClose() } },
     { id: 'op100', group: 'Window', label: 'Opacity 100%', action: () => { setOpacity(1); onClose() } },
-    // Theme
-    {
-      id: 'mode0', group: 'Theme',
-      label: 'Theme: Dark (Default)',
-      shortcut: 'Ctrl+Shift+0',
-      action: () => { setMode('default'); onClose() },
-    },
-    {
-      id: 'mode1', group: 'Theme',
-      label: 'Theme: Focused Notes (Notion-like)',
-      shortcut: 'Ctrl+Shift+1',
-      action: () => { setMode('focused-notes'); onClose() },
-    },
-    {
-      id: 'mode2', group: 'Theme',
-      label: 'Theme: IDE Camouflage (VSCode-like)',
-      shortcut: 'Ctrl+Shift+2',
-      action: () => { setMode('ide-camouflage'); onClose() },
-    },
   ]
 
   const filtered = query.trim()

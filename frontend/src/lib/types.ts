@@ -25,6 +25,7 @@ export interface SessionMetadata {
   sessionId: string
   startedAt: string
   context: string
+  firstQuestion?: string
 }
 
 export interface TurnEntry {

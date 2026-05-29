@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import React from 'react'
 import { motion } from 'framer-motion'
 import { Key, ExternalLink, CheckCircle2, Loader2, AlertTriangle, Eye, EyeOff } from 'lucide-react'
 import { apiUrl } from '@/lib/api'
@@ -21,7 +22,6 @@ export function ApiSetupPage({ onComplete }: ApiSetupPageProps) {
   const [message, setMessage] = useState('')
   const [existing, setExisting] = useState<ApiKeyStatus>({ groqKeySet: false, deepgramKeySet: false })
 
-  // Kiểm tra keys hiện tại
   useEffect(() => {
     fetch(apiUrl('/settings/api-keys'))
       .then(r => r.json())
@@ -60,47 +60,97 @@ export function ApiSetupPage({ onComplete }: ApiSetupPageProps) {
 
   const canSave = groqKey.trim().length > 0 || deepgramKey.trim().length > 0
 
+  const inputStyle = (focused?: boolean): React.CSSProperties => ({
+    width: '100%',
+    padding: '10px 44px 10px 14px',
+    background: 'var(--surface)',
+    border: `1px solid ${focused ? 'rgba(99,102,241,0.40)' : 'var(--line-2)'}`,
+    borderRadius: 10,
+    color: 'var(--text)',
+    fontSize: 12,
+    fontFamily: 'monospace',
+    outline: 'none',
+    transition: 'border-color 150ms ease-out',
+  })
+
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-[#f6f8fb] p-4 overflow-y-auto relative">
-      <div aria-hidden className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] bg-indigo-500/5 rounded-full blur-[120px] pointer-events-none" />
-      <div aria-hidden className="absolute bottom-[-10%] left-[-5%] w-[400px] h-[400px] bg-sky-400/5 rounded-full blur-[100px] pointer-events-none" />
+    <div style={{
+      position: 'fixed', inset: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'var(--bg)',
+      padding: 16,
+      overflowY: 'auto',
+    }}>
+      {/* Ambient glows */}
+      <div aria-hidden style={{
+        position: 'absolute', top: '-10%', right: '-5%',
+        width: 500, height: 500, borderRadius: '50%',
+        background: 'rgba(99,102,241,0.04)', filter: 'blur(120px)', pointerEvents: 'none',
+      }} />
+      <div aria-hidden style={{
+        position: 'absolute', bottom: '-10%', left: '-5%',
+        width: 400, height: 400, borderRadius: '50%',
+        background: 'rgba(6,182,212,0.04)', filter: 'blur(100px)', pointerEvents: 'none',
+      }} />
 
       <motion.div
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: 'easeOut' }}
-        className="relative w-full max-w-lg my-8 z-10"
+        transition={{ duration: 0.4, ease: 'easeOut' }}
+        style={{ position: 'relative', width: '100%', maxWidth: 480, margin: '32px 0', zIndex: 10 }}
       >
-        <div className="bg-white/70 backdrop-blur-sm border border-slate-200/50 rounded-2xl p-8 shadow-2xl shadow-slate-200/50">
+        <div style={{
+          background: 'var(--surface)',
+          border: '1px solid var(--line-2)',
+          borderRadius: 16,
+          padding: 32,
+          boxShadow: '0 24px 64px rgba(0,0,0,0.40)',
+        }}>
 
           {/* Header */}
-          <div className="flex flex-col items-center gap-4 mb-8">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-600 to-cyan-500 flex items-center justify-center shadow-xl shadow-indigo-500/20">
-              <Key className="w-8 h-8 text-white" />
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, marginBottom: 32 }}>
+            <div style={{
+              width: 64, height: 64, borderRadius: 16,
+              background: 'linear-gradient(135deg, #6366f1 0%, #06b6d4 100%)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 8px 32px rgba(99,102,241,0.30)',
+            }}>
+              <Key size={32} color="#fff" />
             </div>
-            <div className="text-center">
-              <h1 className="text-xl font-bold text-slate-800">API Key Setup</h1>
-              <p className="text-sm text-slate-500 mt-1">
+            <div style={{ textAlign: 'center' }}>
+              <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em' }}>
+                API Key Setup
+              </h1>
+              <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-2)' }}>
                 Step 2/2 — Connect AI services
               </p>
             </div>
           </div>
 
           {/* Progress bar */}
-          <div className="flex gap-2 mb-8">
-            <div className="flex-1 h-1 rounded-full bg-indigo-500" />
-            <div className="flex-1 h-1 rounded-full bg-indigo-300" />
+          <div style={{ display: 'flex', gap: 8, marginBottom: 32 }}>
+            <div style={{ flex: 1, height: 3, borderRadius: 99, background: 'var(--primary)' }} />
+            <div style={{ flex: 1, height: 3, borderRadius: 99, background: 'rgba(99,102,241,0.25)' }} />
           </div>
 
           {/* Groq API Key */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-violet-600/20 border border-violet-500/40 flex items-center justify-center text-violet-400 text-xs font-bold">G</span>
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <label style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                fontSize: 10, fontWeight: 600, color: 'var(--muted)',
+                letterSpacing: '0.08em', textTransform: 'uppercase',
+              }}>
+                <span style={{
+                  width: 20, height: 20, borderRadius: '50%',
+                  background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.35)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#a78bfa', fontSize: 10, fontWeight: 700,
+                }}>G</span>
                 Groq API Key
                 {existing.groqKeySet && (
-                  <span className="flex items-center gap-1 text-emerald-400 text-xs normal-case tracking-normal font-normal">
-                    <CheckCircle2 className="w-3 h-3" /> Configured
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--success)', fontSize: 10, fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>
+                    <CheckCircle2 size={12} /> Configured
                   </span>
                 )}
               </label>
@@ -108,41 +158,55 @@ export function ApiSetupPage({ onComplete }: ApiSetupPageProps) {
                 href="https://console.groq.com/keys"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 transition-colors"
+                style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#a78bfa', textDecoration: 'none' }}
               >
-                Get free key <ExternalLink className="w-3 h-3" />
+                Get free key <ExternalLink size={11} />
               </a>
             </div>
-            <div className="relative">
+            <div style={{ position: 'relative' }}>
               <input
                 id="groq-key-input"
                 type={showGroq ? 'text' : 'password'}
                 value={groqKey}
                 onChange={e => { setGroqKey(e.target.value); setStatus('idle') }}
                 placeholder={existing.groqKeySet ? 'Leave blank to keep current key' : 'gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxx'}
-                className="w-full px-4 py-3 pr-12 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400 transition-all"
+                style={inputStyle()}
+                onFocus={e => (e.target as HTMLInputElement).style.borderColor = 'rgba(99,102,241,0.40)'}
+                onBlur={e => (e.target as HTMLInputElement).style.borderColor = 'var(--line-2)'}
               />
               <button
                 onClick={() => setShowGroq(v => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
+                style={{
+                  position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+                  background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', padding: 0,
+                }}
               >
-                {showGroq ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showGroq ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
-            <p className="text-xs text-slate-400 mt-1.5">
+            <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--muted)' }}>
               Used for interview question processing & AI suggestions. Free tier: 6,000 requests/day.
             </p>
           </div>
 
           {/* Deepgram API Key */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-medium text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-teal-600/20 border border-teal-500/40 flex items-center justify-center text-teal-400 text-xs font-bold">D</span>
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <label style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                fontSize: 10, fontWeight: 600, color: 'var(--muted)',
+                letterSpacing: '0.08em', textTransform: 'uppercase',
+              }}>
+                <span style={{
+                  width: 20, height: 20, borderRadius: '50%',
+                  background: 'rgba(20,184,166,0.15)', border: '1px solid rgba(20,184,166,0.35)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: '#2dd4bf', fontSize: 10, fontWeight: 700,
+                }}>D</span>
                 Deepgram API Key
                 {existing.deepgramKeySet && (
-                  <span className="flex items-center gap-1 text-emerald-400 text-xs normal-case tracking-normal font-normal">
-                    <CheckCircle2 className="w-3 h-3" /> Configured
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--success)', fontSize: 10, fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>
+                    <CheckCircle2 size={12} /> Configured
                   </span>
                 )}
               </label>
@@ -150,97 +214,152 @@ export function ApiSetupPage({ onComplete }: ApiSetupPageProps) {
                 href="https://console.deepgram.com/"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-1 text-xs text-teal-400 hover:text-teal-300 transition-colors"
+                style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#2dd4bf', textDecoration: 'none' }}
               >
-                Get free key <ExternalLink className="w-3 h-3" />
+                Get free key <ExternalLink size={11} />
               </a>
             </div>
-            <div className="relative">
+            <div style={{ position: 'relative' }}>
               <input
                 id="deepgram-key-input"
                 type={showDeepgram ? 'text' : 'password'}
                 value={deepgramKey}
                 onChange={e => { setDeepgramKey(e.target.value); setStatus('idle') }}
                 placeholder={existing.deepgramKeySet ? 'Leave blank to keep current key' : 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'}
-                className="w-full px-4 py-3 pr-12 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400 transition-all"
+                style={inputStyle()}
+                onFocus={e => (e.target as HTMLInputElement).style.borderColor = 'rgba(99,102,241,0.40)'}
+                onBlur={e => (e.target as HTMLInputElement).style.borderColor = 'var(--line-2)'}
               />
               <button
                 onClick={() => setShowDeepgram(v => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
+                style={{
+                  position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+                  background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', padding: 0,
+                }}
               >
-                {showDeepgram ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showDeepgram ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
-            <p className="text-xs text-zinc-600 mt-1.5">
+            <p style={{ margin: '6px 0 0', fontSize: 11, color: 'var(--muted)' }}>
               Used for realtime speech recognition. Free tier: $200 credits.
             </p>
           </div>
 
           {/* Info box */}
-          <div className="mb-6 p-3 bg-slate-50 border border-slate-200/80 rounded-xl">
-            <p className="text-xs text-slate-500 leading-relaxed">
-              <span className="text-slate-600 font-medium">🔒 Secure:</span> Keys are saved locally on your machine and never sent anywhere.
+          <div style={{
+            marginBottom: 20, padding: '10px 14px',
+            background: 'rgba(99,102,241,0.05)',
+            border: '1px solid rgba(99,102,241,0.12)',
+            borderRadius: 10,
+          }}>
+            <p style={{ margin: 0, fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6 }}>
+              <span style={{ color: 'var(--text)', fontWeight: 600 }}>🔒 Secure:</span>{' '}
+              Keys are saved locally on your machine and never sent anywhere.
               You can update them anytime from the Settings menu.
             </p>
           </div>
 
           {/* Feedback */}
           {status === 'error' && message && (
-            <div className="flex items-start gap-2 mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-              <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-              <p className="text-xs text-red-700">{message}</p>
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 16,
+              padding: '10px 12px',
+              background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.20)',
+              borderRadius: 8,
+            }}>
+              <AlertTriangle size={14} color="var(--danger)" style={{ flexShrink: 0, marginTop: 1 } as React.CSSProperties} />
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--danger)', lineHeight: 1.5 }}>{message}</p>
             </div>
           )}
           {status === 'success' && (
-            <div className="flex items-start gap-2 mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-              <p className="text-xs text-emerald-700">{message}</p>
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 16,
+              padding: '10px 12px',
+              background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.20)',
+              borderRadius: 8,
+            }}>
+              <CheckCircle2 size={14} color="var(--success)" style={{ flexShrink: 0, marginTop: 1 } as React.CSSProperties} />
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--success)', lineHeight: 1.5 }}>{message}</p>
             </div>
           )}
 
           {/* Buttons */}
-          <div className="flex gap-3">
+          <div style={{ display: 'flex', gap: 12 }}>
             <button
               id="api-setup-save-btn"
               onClick={handleSave}
               disabled={!canSave || status === 'loading' || status === 'success'}
-              className="flex-1 py-3 px-4 bg-gradient-to-r from-indigo-600 via-indigo-700 to-cyan-600 hover:from-indigo-500 hover:via-indigo-600 hover:to-cyan-500 disabled:from-slate-200 disabled:to-slate-200 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/25"
+              style={{
+                flex: 1, padding: '12px 16px',
+                background: (!canSave || status === 'loading' || status === 'success')
+                  ? 'var(--surface-hover)'
+                  : 'linear-gradient(135deg, #6366f1 0%, #4f46e5 60%, #06b6d4 100%)',
+                color: (!canSave || status === 'loading' || status === 'success') ? 'var(--muted)' : '#fff',
+                fontWeight: 700, fontSize: 14,
+                border: 'none', borderRadius: 10,
+                cursor: (!canSave || status === 'loading' || status === 'success') ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                boxShadow: (!canSave || status === 'loading' || status === 'success')
+                  ? 'none' : '0 6px 24px rgba(99,102,241,0.35)',
+                transition: 'opacity 150ms ease-out, box-shadow 150ms ease-out',
+              }}
             >
               {status === 'loading' ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</>
+                <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' } as React.CSSProperties} /> Saving...</>
               ) : status === 'success' ? (
-                <><CheckCircle2 className="w-4 h-4" /> Saved!</>
+                <><CheckCircle2 size={16} /> Saved!</>
               ) : (
-                <><Key className="w-4 h-4" /> Save &amp; Continue</>
+                <><Key size={16} /> Save & Continue</>
               )}
             </button>
 
-            {/* Skip only if at least one key is already set */}
             {(existing.groqKeySet || existing.deepgramKeySet) && (
               <button
                 id="api-setup-skip-btn"
                 onClick={onComplete}
-                className="px-4 py-3 border border-zinc-700 hover:border-zinc-500 text-zinc-400 hover:text-zinc-200 font-medium rounded-xl transition-all text-sm"
+                style={{
+                  padding: '12px 20px',
+                  background: 'transparent',
+                  color: 'var(--text-2)',
+                  border: '1px solid var(--line-2)',
+                  borderRadius: 10,
+                  cursor: 'pointer',
+                  fontWeight: 500, fontSize: 13,
+                  transition: 'border-color 150ms, color 150ms',
+                }}
+                onMouseEnter={e => {
+                  (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--line-2)'
+                  ;(e.currentTarget as HTMLButtonElement).style.color = 'var(--text)'
+                }}
+                onMouseLeave={e => {
+                  (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-2)'
+                }}
               >
                 Skip
               </button>
             )}
           </div>
 
-          <p className="text-center text-xs text-zinc-600 mt-4">
+          <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--muted)', margin: '16px 0 0' }}>
             Free keys — Sign up at{' '}
-            <a href="https://console.groq.com" target="_blank" rel="noopener noreferrer" className="text-violet-400 hover:underline">console.groq.com</a>
+            <a href="https://console.groq.com" target="_blank" rel="noopener noreferrer" style={{ color: '#a78bfa' }}>
+              console.groq.com
+            </a>
             {' '}and{' '}
-            <a href="https://console.deepgram.com" target="_blank" rel="noopener noreferrer" className="text-teal-400 hover:underline">console.deepgram.com</a>
+            <a href="https://console.deepgram.com" target="_blank" rel="noopener noreferrer" style={{ color: '#2dd4bf' }}>
+              console.deepgram.com
+            </a>
           </p>
         </div>
       </motion.div>
+
+      <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
     </div>
   )
 }
 
 /**
- * Hook kiểm tra xem API keys đã được set chưa
+ * Hook to check if API keys have been set
  */
 export function useApiKeysCheck() {
   const [checked, setChecked] = useState(false)

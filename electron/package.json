@@ -21,18 +21,14 @@
       "target": [
         {
           "target": "nsis",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         }
       ],
       "icon": "icon.ico"
     },
     "nsis": {
-      "oneClick": false,
-      "allowDirChange": true,
-      "installerIcon": "icon.ico",
-      "uninstallerIcon": "icon.ico",
+      "oneClick": true,
+      "perMachine": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "IntelliView"

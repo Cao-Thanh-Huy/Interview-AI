@@ -46,23 +46,23 @@ export function validateLicense(): LicenseResult {
   const licensePath = candidatePaths.find(existsSync)
 
   if (!licensePath) {
-    return { valid: false, message: 'Chưa có file license.key', hwid }
+    return { valid: false, message: 'No license.key file found', hwid }
   }
 
   let content: string
   try {
     content = readFileSync(licensePath, 'utf-8').trim()
   } catch {
-    return { valid: false, message: 'Không đọc được file license.key', hwid }
+    return { valid: false, message: 'Cannot read license.key file', hwid }
   }
 
   if (!content) {
-    return { valid: false, message: 'File license.key trống — chưa nhập key', hwid }
+    return { valid: false, message: 'License key file is empty — please enter your key', hwid }
   }
 
   const dotIndex = content.lastIndexOf('.')
   if (dotIndex === -1) {
-    return { valid: false, message: 'Định dạng License Key không đúng', hwid }
+    return { valid: false, message: 'Invalid license key format', hwid }
   }
 
   const encodedPayload = content.slice(0, dotIndex)
@@ -75,7 +75,7 @@ export function validateLicense(): LicenseResult {
     .slice(0, 32)
 
   if (signature !== expectedSig) {
-    return { valid: false, message: 'License Key không hợp lệ hoặc đã bị chỉnh sửa', hwid }
+    return { valid: false, message: 'Invalid license key or key has been tampered with', hwid }
   }
 
   // Decode payload JSON
@@ -83,14 +83,14 @@ export function validateLicense(): LicenseResult {
   try {
     payload = JSON.parse(Buffer.from(encodedPayload, 'base64').toString('utf-8'))
   } catch {
-    return { valid: false, message: 'Nội dung License Key bị hỏng', hwid }
+    return { valid: false, message: 'License key payload is corrupted', hwid }
   }
 
   // Kiểm tra HWID khớp máy hiện tại
   if (payload.hwid !== hwid) {
     return {
       valid: false,
-      message: `License này không thuộc máy hiện tại (HWID máy bạn: ${hwid})`,
+      message: `This license is not valid for this machine (your HWID: ${hwid})`,
       hwid,
     }
   }
@@ -98,19 +98,19 @@ export function validateLicense(): LicenseResult {
   // Kiểm tra hạn dùng
   const expiresAt = new Date(payload.expiresAt)
   if (isNaN(expiresAt.getTime())) {
-    return { valid: false, message: 'Ngày hết hạn trong License không hợp lệ', hwid }
+    return { valid: false, message: 'License expiry date is invalid', hwid }
   }
 
   if (new Date() > expiresAt) {
     return {
       valid: false,
-      message: `License đã hết hạn ngày ${expiresAt.toLocaleDateString('vi-VN')}`,
+      message: `License expired on ${expiresAt.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`,
       hwid,
       expiresAt,
     }
   }
 
-  return { valid: true, message: 'License hợp lệ', hwid, expiresAt }
+  return { valid: true, message: 'License is valid', hwid, expiresAt }
 }
 
 /**
@@ -123,7 +123,7 @@ export function activateLicense(keyContent: string): LicenseResult {
     writeFileSync(targetPath, keyContent.trim(), 'utf-8')
   } catch {
     const hwid = getHWID()
-    return { valid: false, message: 'Không ghi được file license.key — kiểm tra quyền thư mục', hwid }
+    return { valid: false, message: 'Cannot write license.key file — check folder permissions', hwid }
   }
   return validateLicense()
 }

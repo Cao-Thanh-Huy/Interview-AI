@@ -1,5 +1,5 @@
 import React from 'react'
-import { Mic, BrainCircuit, History, Target } from 'lucide-react'
+import { Mic, BrainCircuit, History, Target, Settings } from 'lucide-react'
 
 export type SidebarTab = 'setup' | 'training' | 'history' | 'mock'
 
@@ -13,12 +13,13 @@ const NAV: { id: SidebarTab; icon: React.ReactNode; label: string }[] = [
 interface Props {
   activeTab: SidebarTab
   onTabChange: (tab: SidebarTab) => void
+  onSettings: () => void
 }
 
-function SidebarInner({ activeTab, onTabChange }: Props) {
+function SidebarInner({ activeTab, onTabChange, onSettings }: Props) {
   return (
     <aside className="sidebar">
-      {/* Logo mark — flat wordmark */}
+      {/* Logo mark */}
       <div
         title="IntelliView"
         style={{
@@ -50,6 +51,16 @@ function SidebarInner({ activeTab, onTabChange }: Props) {
           </button>
         ))}
       </nav>
+
+      {/* Settings — bottom left, always visible on all tabs */}
+      <button
+        onClick={onSettings}
+        title="Settings"
+        className="nav-icon"
+        style={{ marginTop: 8, flexShrink: 0 }}
+      >
+        <Settings size={16} />
+      </button>
     </aside>
   )
 }

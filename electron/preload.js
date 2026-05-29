@@ -1,10 +1,16 @@
 // Preload script — runs in renderer context with Node access disabled
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, clipboard } = require('electron')
 
 // App info
 contextBridge.exposeInMainWorld('electronApp', {
   isElectron: true,
   platform: process.platform,
+})
+
+// Native clipboard — navigator.clipboard.writeText() is unreliable in Electron
+// Use this instead: window.electronClipboard.write(text)
+contextBridge.exposeInMainWorld('electronClipboard', {
+  write: (text) => clipboard.writeText(text),
 })
 
 // Window control IPC — exposed to renderer safely

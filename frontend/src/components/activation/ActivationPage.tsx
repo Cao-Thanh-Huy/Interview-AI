@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import React, { useState, useEffect, useCallback } from 'react'
+import { motion } from 'framer-motion'
 import { Shield, ShieldCheck, Loader2, AlertTriangle, Zap } from 'lucide-react'
 import { apiUrl } from '@/lib/api'
 
@@ -14,15 +14,31 @@ interface LicenseStatusResponse {
 // ─── Splash Screen — hiện khi đang kết nối backend ───────────────────────────
 function SplashScreen() {
   return (
-    <div className="fixed inset-0 flex flex-col items-center justify-center bg-[#f6f8fb] gap-4">
-      <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-600 to-cyan-500 shadow-xl shadow-indigo-500/20 flex items-center justify-center">
-        <Zap className="w-7 h-7 text-white" />
+    <div style={{
+      position: 'fixed', inset: 0,
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      background: 'var(--bg)',
+      gap: 16,
+    }}>
+      <div style={{
+        width: 56, height: 56,
+        borderRadius: 16,
+        background: 'linear-gradient(135deg, #6366f1 0%, #06b6d4 100%)',
+        boxShadow: '0 8px 32px rgba(99,102,241,0.30)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <Zap size={28} color="#fff" />
       </div>
-      <div className="text-center">
-        <h1 className="text-2xl font-bold text-slate-800 tracking-tight">IntelliView</h1>
-        <p className="text-sm text-slate-500 mt-1">Connecting to system...</p>
+      <div style={{ textAlign: 'center' }}>
+        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em' }}>
+          IntelliView
+        </h1>
+        <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-2)' }}>
+          Connecting to system...
+        </p>
       </div>
-      <Loader2 className="w-5 h-5 text-indigo-500 animate-spin mt-2" />
+      <Loader2 size={20} color="var(--primary)" style={{ animation: 'spin 1s linear infinite', marginTop: 8 } as React.CSSProperties} />
     </div>
   )
 }
@@ -66,66 +82,163 @@ function ActivationPage({ hwid, errorMessage, onActivated }: ActivationPageProps
     }
   }
 
-  async function handleCopyHWID() {
+  function handleCopyHWID() {
     try {
-      await navigator.clipboard.writeText(hwid)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      // Priority 1: Electron native clipboard (always works, no permission needed)
+      const ec = (window as unknown as { electronClipboard?: { write: (t: string) => void } }).electronClipboard
+      if (ec) {
+        ec.write(hwid)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+        return
+      }
+      // Priority 2: Web Clipboard API (browser)
+      navigator.clipboard.writeText(hwid).then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      }).catch(() => {
+        execCommandFallback()
+      })
     } catch {
-      // clipboard API có thể bị chặn
+      execCommandFallback()
     }
   }
 
+  function execCommandFallback() {
+    // Priority 3: Legacy execCommand (deprecated but reliable fallback)
+    try {
+      const el = document.createElement('textarea')
+      el.value = hwid
+      el.style.position = 'fixed'
+      el.style.opacity = '0'
+      document.body.appendChild(el)
+      el.focus()
+      el.select()
+      document.execCommand('copy')
+      document.body.removeChild(el)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch { /* nothing */ }
+  }
+
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-[#f6f8fb] p-4 relative overflow-hidden">
-      {/* Background glows matching main app */}
-      <div aria-hidden className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] bg-indigo-500/5 rounded-full blur-[120px] pointer-events-none" />
-      <div aria-hidden className="absolute bottom-[-10%] left-[-5%] w-[400px] h-[400px] bg-sky-400/5 rounded-full blur-[100px] pointer-events-none" />
+    <div style={{
+      position: 'fixed', inset: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'var(--bg)',
+      padding: 16,
+      overflow: 'hidden',
+    }}>
+      {/* Ambient background glows */}
+      <div aria-hidden style={{
+        position: 'absolute', top: '-10%', right: '-5%',
+        width: 500, height: 500,
+        borderRadius: '50%',
+        background: 'rgba(99,102,241,0.04)',
+        filter: 'blur(120px)',
+        pointerEvents: 'none',
+      }} />
+      <div aria-hidden style={{
+        position: 'absolute', bottom: '-10%', left: '-5%',
+        width: 400, height: 400,
+        borderRadius: '50%',
+        background: 'rgba(6,182,212,0.04)',
+        filter: 'blur(100px)',
+        pointerEvents: 'none',
+      }} />
 
       <motion.div
         initial={{ opacity: 0, y: 24 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: 'easeOut' }}
-        className="relative w-full max-w-md z-10"
+        transition={{ duration: 0.4, ease: 'easeOut' }}
+        style={{ position: 'relative', width: '100%', maxWidth: 440, zIndex: 10 }}
       >
         {/* Card */}
-        <div className="bg-white/70 backdrop-blur-sm border border-slate-200/50 rounded-2xl p-8 shadow-2xl shadow-slate-200/50">
+        <div style={{
+          background: 'var(--surface)',
+          border: '1px solid var(--line-2)',
+          borderRadius: 16,
+          padding: 32,
+          boxShadow: '0 24px 64px rgba(0,0,0,0.40)',
+        }}>
 
           {/* Icon + Title */}
-          <div className="flex flex-col items-center gap-4 mb-8">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-600 to-cyan-500 flex items-center justify-center shadow-xl shadow-indigo-500/20">
-              <Shield className="w-8 h-8 text-white" />
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, marginBottom: 32 }}>
+            <div style={{
+              width: 64, height: 64,
+              borderRadius: 16,
+              background: 'linear-gradient(135deg, #6366f1 0%, #06b6d4 100%)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 8px 32px rgba(99,102,241,0.30)',
+            }}>
+              <Shield size={32} color="#fff" />
             </div>
-            <div className="text-center">
-              <h1 className="text-xl font-bold text-slate-800">Activate Software</h1>
-              <p className="text-sm text-slate-500 mt-1">IntelliView · License Key required to continue</p>
+            <div style={{ textAlign: 'center' }}>
+              <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em' }}>
+                Activate Software
+              </h1>
+              <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--text-2)' }}>
+                IntelliView · License Key required to continue
+              </p>
             </div>
           </div>
 
           {/* HWID Box */}
-          <div className="mb-6">
-            <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">
+          <div style={{ marginBottom: 24 }}>
+            <label style={{
+              display: 'block', fontSize: 10, fontWeight: 600,
+              color: 'var(--muted)', letterSpacing: '0.08em',
+              textTransform: 'uppercase', marginBottom: 8,
+            }}>
               Your Machine ID (HWID)
             </label>
             <button
               id="hwid-copy-btn"
               onClick={handleCopyHWID}
               title="Click to copy"
-              className="w-full flex items-center justify-between gap-3 px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl hover:border-indigo-300 transition-colors group"
+              style={{
+                width: '100%',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                padding: '10px 14px',
+                background: 'rgba(99,102,241,0.06)',
+                border: '1px solid rgba(99,102,241,0.18)',
+                borderRadius: 10,
+                cursor: 'pointer',
+                transition: 'border-color 150ms ease-out, background 150ms ease-out',
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(99,102,241,0.40)'
+                ;(e.currentTarget as HTMLButtonElement).style.background = 'rgba(99,102,241,0.10)'
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(99,102,241,0.18)'
+                ;(e.currentTarget as HTMLButtonElement).style.background = 'rgba(99,102,241,0.06)'
+              }}
             >
-              <span className="font-mono text-sm text-indigo-600 tracking-widest">{hwid}</span>
-              <span className="text-xs text-slate-400 group-hover:text-indigo-500 transition-colors shrink-0">
-                {copied ? '✓ Copied' : 'Click to copy'}
+              <span style={{ fontFamily: 'monospace', fontSize: 13, color: 'var(--primary)', letterSpacing: '0.08em', fontWeight: 600 }}>
+                {hwid}
+              </span>
+              <span style={{
+                fontSize: 11, color: copied ? 'var(--success)' : 'var(--text-2)',
+                flexShrink: 0,
+                transition: 'color 150ms ease-out',
+                fontWeight: 500,
+              }}>
+                {copied ? '✓ Copied!' : 'Click to copy'}
               </span>
             </button>
-            <p className="text-xs text-slate-400 mt-2">
+            <p style={{ margin: '8px 0 0', fontSize: 11, color: 'var(--muted)' }}>
               Send this code to the developer to receive your License Key.
             </p>
           </div>
 
           {/* License Key Input */}
-          <div className="mb-4">
-            <label htmlFor="license-key-input" className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">
+          <div style={{ marginBottom: 16 }}>
+            <label htmlFor="license-key-input" style={{
+              display: 'block', fontSize: 10, fontWeight: 600,
+              color: 'var(--muted)', letterSpacing: '0.08em',
+              textTransform: 'uppercase', marginBottom: 8,
+            }}>
               Enter License Key
             </label>
             <textarea
@@ -144,22 +257,35 @@ function ActivationPage({ hwid, errorMessage, onActivated }: ActivationPageProps
               }}
               placeholder="Paste your License Key here..."
               rows={3}
-              className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 font-mono resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400 transition-all"
+              className="input-dark"
+              style={{ fontFamily: 'monospace', fontSize: 12, resize: 'none' }}
             />
           </div>
 
-          {/* Error message */}
+          {/* Error messages */}
           {errorMessage && status !== 'error' && (
-            <div className="flex items-start gap-2 mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-              <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-              <p className="text-xs text-amber-700">{errorMessage}</p>
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 16,
+              padding: '10px 12px',
+              background: 'rgba(245,158,11,0.08)',
+              border: '1px solid rgba(245,158,11,0.20)',
+              borderRadius: 8,
+            }}>
+              <AlertTriangle size={14} color="var(--warn)" style={{ flexShrink: 0, marginTop: 1 } as React.CSSProperties} />
+              <p style={{ margin: 0, fontSize: 12, color: '#d4a017', lineHeight: 1.5 }}>{errorMessage}</p>
             </div>
           )}
 
           {status === 'error' && feedbackMsg && (
-            <div className="flex items-start gap-2 mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-              <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-              <p className="text-xs text-red-700">{feedbackMsg}</p>
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 16,
+              padding: '10px 12px',
+              background: 'rgba(244,63,94,0.08)',
+              border: '1px solid rgba(244,63,94,0.20)',
+              borderRadius: 8,
+            }}>
+              <AlertTriangle size={14} color="var(--danger)" style={{ flexShrink: 0, marginTop: 1 } as React.CSSProperties} />
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--danger)', lineHeight: 1.5 }}>{feedbackMsg}</p>
             </div>
           )}
 
@@ -168,26 +294,44 @@ function ActivationPage({ hwid, errorMessage, onActivated }: ActivationPageProps
             id="activate-btn"
             onClick={handleActivate}
             disabled={!key.trim() || status === 'loading'}
-            className="w-full py-3 px-4 bg-gradient-to-r from-indigo-600 via-indigo-700 to-cyan-600 hover:from-indigo-500 hover:via-indigo-600 hover:to-cyan-500 disabled:from-slate-300 disabled:to-slate-300 disabled:cursor-not-allowed text-white font-bold rounded-xl transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/25"
+            style={{
+              width: '100%',
+              padding: '12px 16px',
+              background: (!key.trim() || status === 'loading')
+                ? 'var(--surface-hover)'
+                : 'linear-gradient(135deg, #6366f1 0%, #4f46e5 60%, #06b6d4 100%)',
+              color: (!key.trim() || status === 'loading') ? 'var(--muted)' : '#fff',
+              fontWeight: 700, fontSize: 14,
+              border: 'none', borderRadius: 10,
+              cursor: (!key.trim() || status === 'loading') ? 'not-allowed' : 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              boxShadow: (!key.trim() || status === 'loading')
+                ? 'none'
+                : '0 6px 24px rgba(99,102,241,0.35)',
+              transition: 'opacity 150ms ease-out, box-shadow 150ms ease-out',
+            }}
           >
             {status === 'loading' ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' } as React.CSSProperties} />
                 Verifying...
               </>
             ) : (
               <>
-                <ShieldCheck className="w-4 h-4" />
+                <ShieldCheck size={16} />
                 Activate
               </>
             )}
           </button>
 
-          <p className="text-center text-xs text-slate-400 mt-4">
+          <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--muted)', margin: '16px 0 0' }}>
             Need help? Contact the developer with your HWID above.
           </p>
         </div>
       </motion.div>
+
+      {/* Inline spin keyframe for Loader2 */}
+      <style>{`@keyframes spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
     </div>
   )
 }

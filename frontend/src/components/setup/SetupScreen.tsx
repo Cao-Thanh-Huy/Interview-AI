@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Mic } from 'lucide-react'
 import { useInterviewStore } from '@/store/useInterviewStore'
 import { Sidebar, type SidebarTab } from '@/components/layout/Sidebar'
@@ -12,25 +12,40 @@ import { apiUrl } from '@/lib/api'
 function MicOrb() {
   return (
     <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      {/* Ambient radial bloom behind the circle */}
+      {/* Outer ambient bloom */}
       <div style={{
         position: 'absolute',
-        width: 240, height: 240,
+        width: 310, height: 310,
         borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(99,102,241,0.10) 0%, transparent 70%)',
+        background: 'radial-gradient(circle, rgba(99,102,241,0.13) 0%, transparent 70%)',
         pointerEvents: 'none',
+        animation: 'micGlow 3.5s ease-in-out infinite',
       }} />
-      {/* Ring + icon */}
+      {/* Outer pulse ring */}
       <div style={{
-        width: 128, height: 128,
+        position: 'absolute',
+        width: 192, height: 192,
         borderRadius: '50%',
-        background: '#0d0d1c',
         border: '1.5px solid rgba(99,102,241,0.22)',
+        pointerEvents: 'none',
+        animation: 'micPulse 3.5s ease-in-out infinite',
+      }} />
+      {/* Inner ring + icon */}
+      <div style={{
+        width: 152, height: 152,
+        borderRadius: '50%',
+        background: 'var(--surface)',
+        border: '1.5px solid rgba(99,102,241,0.30)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         position: 'relative', zIndex: 1,
-        boxShadow: '0 0 32px rgba(99,102,241,0.06)',
+        boxShadow: '0 0 40px rgba(99,102,241,0.12)',
       }}>
-        <Mic size={40} color="#ffffff" strokeWidth={1.5} />
+        <Mic
+          size={48}
+          color="#ffffff"
+          strokeWidth={1.5}
+          style={{ animation: 'micIconBreathe 3.5s ease-in-out infinite' } as React.CSSProperties}
+        />
       </div>
     </div>
   )
@@ -111,9 +126,9 @@ function SetupTab({ onStart, isStarting }: { onStart: () => void; isStarting: bo
 
       {/* Heading */}
       <h1 style={{
-        margin: '28px 0 8px',
-        fontSize: 22, fontWeight: 500,
-        color: '#c8d4e8',
+        margin: '32px 0 10px',
+        fontSize: 26, fontWeight: 600,
+        color: 'var(--text)',
         letterSpacing: '-0.02em',
         textAlign: 'center',
         lineHeight: 1.2,
@@ -123,8 +138,9 @@ function SetupTab({ onStart, isStarting }: { onStart: () => void; isStarting: bo
 
       {/* Subtitle */}
       <p style={{
-        margin: '0 0 20px',
-        fontSize: 13, color: '#3a4560',
+        margin: '0 0 24px',
+        fontSize: 14, color: 'var(--text)',
+        opacity: 0.65,
         textAlign: 'center',
       }}>
         {subtitle}
@@ -132,7 +148,7 @@ function SetupTab({ onStart, isStarting }: { onStart: () => void; isStarting: bo
 
       {/* Audio device picker */}
       {audioDevices.length > 0 && (
-        <div style={{ width: '100%', maxWidth: 320, marginBottom: 20 }}>
+        <div style={{ width: '100%', maxWidth: 360, marginBottom: 24 }}>
           <label style={{ display: 'block', fontSize: 10, color: 'var(--muted)', letterSpacing: '0.06em', marginBottom: 6, textTransform: 'uppercase' }}>
             Audio Source
           </label>
@@ -164,8 +180,20 @@ function SetupTab({ onStart, isStarting }: { onStart: () => void; isStarting: bo
             </p>
           )}
           {!audioDevices.some(d => isLoopback(d.label)) && (
-            <p style={{ margin: '6px 0 0', fontSize: 10, color: '#3a4560', lineHeight: 1.5 }}>
-              Tip: Install <strong style={{ color: 'var(--text-2)' }}>VB-Cable</strong> to capture Zoom/Teams audio
+            <p style={{ margin: '6px 0 0', fontSize: 10, color: 'var(--muted)', lineHeight: 1.5 }}>
+              Tip: Install{' '}
+              <button
+                onClick={() => window.open('https://vb-audio.com/Cable/', '_blank')}
+                style={{
+                  background: 'none', border: 'none', padding: 0,
+                  color: 'var(--primary)', fontWeight: 600, fontSize: 10,
+                  cursor: 'pointer', textDecoration: 'underline',
+                  textDecorationColor: 'rgba(99,102,241,0.4)',
+                }}
+              >
+                VB-Cable
+              </button>
+              {' '}to capture Zoom/Teams audio
             </p>
           )}
         </div>
@@ -197,7 +225,7 @@ function SetupTab({ onStart, isStarting }: { onStart: () => void; isStarting: bo
       {/* Hint */}
       <span style={{
         position: 'absolute', bottom: 20,
-        fontSize: 11, color: '#1c2233',
+        fontSize: 11, color: 'var(--muted)',
         letterSpacing: '0.04em',
         userSelect: 'none',
       }}>
@@ -244,7 +272,7 @@ export function SetupScreen() {
     <div style={{ display: 'flex', height: '100%' }}>
 
       {/* Sidebar */}
-      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} onSettings={() => setShowSettings(true)} />
 
       {/* Main */}
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
@@ -264,16 +292,6 @@ export function SetupScreen() {
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
               <span style={{ fontSize: 12, color: '#10b981', fontWeight: 500 }}>Ready</span>
             </div>
-          )}
-
-          {activeTab !== 'setup' && (
-            <button
-              onClick={() => setShowSettings(true)}
-              className="btn btn-ghost"
-              style={{ padding: '3px 8px', fontSize: 11 }}
-            >
-              Settings
-            </button>
           )}
         </header>
 

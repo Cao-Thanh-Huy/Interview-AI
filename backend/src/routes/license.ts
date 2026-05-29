@@ -31,12 +31,12 @@ licenseRouter.post('/activate', async (c) => {
   try {
     body = await c.req.json()
   } catch {
-    return c.json({ success: false, message: 'Request body không hợp lệ (phải là JSON)' }, 400)
+    return c.json({ success: false, message: 'Invalid request body (must be JSON)' }, 400)
   }
 
   const { key } = body
   if (!key || typeof key !== 'string' || !key.trim()) {
-    return c.json({ success: false, message: 'Thiếu hoặc rỗng trường "key"' }, 400)
+    return c.json({ success: false, message: 'Missing or empty "key" field' }, 400)
   }
 
   // Xóa cache cũ trước khi validate key mới
@@ -47,7 +47,7 @@ licenseRouter.post('/activate', async (c) => {
   if (result.valid) {
     return c.json({
       success: true,
-      message: `Kích hoạt thành công! Phần mềm có hiệu lực đến ${result.expiresAt?.toLocaleDateString('vi-VN')}`,
+      message: `Activation successful! License valid until ${result.expiresAt?.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}`,
       expiresAt: result.expiresAt?.toISOString() ?? null,
     })
   }
@@ -64,8 +64,8 @@ licenseRouter.post('/deactivate', (c) => {
     const keyPath = join(process.cwd(), 'license.key')
     if (existsSync(keyPath)) writeFileSync(keyPath, '', 'utf-8')
     invalidateLicenseCache()
-    return c.json({ success: true, message: 'License đã được xóa. Vui lòng nhập key mới.' })
+    return c.json({ success: true, message: 'License removed. Please enter a new key.' })
   } catch {
-    return c.json({ success: false, message: 'Không thể xóa license' }, 500)
+    return c.json({ success: false, message: 'Failed to remove license' }, 500)
   }
 })

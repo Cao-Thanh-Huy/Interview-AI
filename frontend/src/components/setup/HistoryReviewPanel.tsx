@@ -100,7 +100,7 @@ export function HistoryReviewPanel() {
   }, [sessions])
 
   return (
-    <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 0, overflowY: 'auto', flex: 1 }}>
+    <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 0, overflowY: 'auto', flex: 1 }}>
       {/* Toast */}
       {toast && (
         <div
@@ -120,14 +120,16 @@ export function HistoryReviewPanel() {
       )}
 
       {/* Toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <p style={{ fontSize: 12, color: 'var(--muted)' }}>
-          {sessions.length === 0 ? 'No sessions recorded yet.' : `${sessions.length} session${sessions.length !== 1 ? 's' : ''}`}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+          {sessions.length === 0 ? 'No sessions yet' : (
+            <>{sessions.length} <span style={{ fontWeight: 400, color: 'var(--muted)' }}>session{sessions.length !== 1 ? 's' : ''} recorded</span></>
+          )}
         </p>
         <button
           onClick={loadSessions}
           disabled={loading}
-          style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--primary)', background: 'none', border: 'none', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.5 : 1 }}
+          style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--primary)', background: 'none', border: 'none', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.5 : 1, fontWeight: 600 }}
         >
           <RefreshCw size={12} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
           Refresh
@@ -142,15 +144,24 @@ export function HistoryReviewPanel() {
 
       {/* Date-grouped session list */}
       {groupedSessions.length === 0 && !loading ? (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 13, textAlign: 'center' }}>
-          <p>No sessions yet</p>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: 'var(--muted)', textAlign: 'center', padding: '40px 0' }}>
+          <div style={{ fontSize: 32, opacity: 0.3 }}>📋</div>
+          <div>
+            <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-2)', marginBottom: 4 }}>No sessions recorded yet</p>
+            <p style={{ fontSize: 12, color: 'var(--muted)' }}>Start a session to begin building your history</p>
+          </div>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {groupedSessions.map(([dateKey, daySessions]) => (
             <div key={dateKey}>
-              {/* Date label */}
-              <p className="label" style={{ marginBottom: 6 }}>{formatDateGroup(daySessions[0].startedAt)}</p>
+              {/* Date group header */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--primary)', letterSpacing: '0.1em', whiteSpace: 'nowrap', opacity: 0.8 }}>
+                  {formatDateGroup(daySessions[0].startedAt)}
+                </p>
+                <div style={{ flex: 1, height: 1, background: 'var(--line-2)' }} />
+              </div>
 
               {/* Session rows */}
               {daySessions.map((session) => (
@@ -160,29 +171,35 @@ export function HistoryReviewPanel() {
                     style={{
                       width: '100%',
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '8px 12px',
-                      background: selectedId === session.sessionId ? 'var(--surface)' : 'transparent',
+                      padding: '10px 12px 10px 16px',
+                      background: selectedId === session.sessionId ? 'rgba(99,102,241,0.08)' : 'transparent',
                       border: 'none',
                       borderLeft: selectedId === session.sessionId ? '2px solid var(--primary)' : '2px solid transparent',
                       cursor: 'pointer',
                       textAlign: 'left',
-                      borderRadius: '0 6px 6px 0',
+                      borderRadius: '0 8px 8px 0',
                       transition: 'background 120ms ease-out, border-color 120ms ease-out',
                     }}
+                    onMouseEnter={e => { if (selectedId !== session.sessionId) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(255,255,255,0.03)' }}
+                    onMouseLeave={e => { if (selectedId !== session.sessionId) (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
                   >
-                    <div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ fontSize: 13, color: 'var(--text)', fontWeight: 500 }}>
                         {formatDate(session.startedAt)}
                       </p>
-                      {session.context && (
-                        <p style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 280, marginTop: 2 }}>
-                          {session.context}
+                      {(session.context || session.firstQuestion) && (
+                        <p style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
+                          {session.context
+                            ? session.context
+                            : (session.firstQuestion!.length > 80
+                                ? session.firstQuestion!.slice(0, 80) + '…'
+                                : session.firstQuestion)}
                         </p>
                       )}
                     </div>
                     {selectedId === session.sessionId
-                      ? <ChevronUp size={14} color="var(--muted)" />
-                      : <ChevronDown size={14} color="var(--muted)" />}
+                      ? <ChevronUp size={14} color="var(--muted)" style={{ flexShrink: 0 }} />
+                      : <ChevronDown size={14} color="var(--muted)" style={{ flexShrink: 0 }} />}
                   </button>
 
                   {/* Expanded turns */}

@@ -565,33 +565,95 @@ export function MockInterviewPanel() {
           <div ref={bottomRef} />
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center flex-1 gap-5 py-6 text-center">
-          <div className="relative">
-            <div className="absolute inset-0 rounded-full animate-ping" style={{ background: 'rgba(99,102,241,0.1)' }} />
-            <div className="relative w-16 h-16 rounded-full bg-gradient-to-br from-indigo-600 to-cyan-500 flex items-center justify-center" style={{ boxShadow: '0 0 30px rgba(99,102,241,0.3)' }}>
-              <BrainCircuit className="w-7 h-7 text-white" />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: 0, padding: '12px 24px', textAlign: 'center' }}>
+          {/* Icon with pulse ring */}
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 18 }}>
+            <div style={{
+              position: 'absolute',
+              width: 120, height: 120,
+              borderRadius: '50%',
+              background: 'radial-gradient(circle, rgba(99,102,241,0.12) 0%, transparent 70%)',
+              animation: 'micGlow 3.5s ease-in-out infinite',
+              pointerEvents: 'none',
+            }} />
+            <div style={{
+              position: 'absolute',
+              width: 96, height: 96,
+              borderRadius: '50%',
+              border: '1.5px solid rgba(99,102,241,0.20)',
+              animation: 'micPulse 3.5s ease-in-out infinite',
+              pointerEvents: 'none',
+            }} />
+            <div style={{
+              width: 72, height: 72,
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, #6366f1 0%, #06b6d4 100%)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 0 32px rgba(99,102,241,0.28)',
+              position: 'relative', zIndex: 1,
+            }}>
+              <BrainCircuit size={28} color="#fff" />
             </div>
           </div>
-          <div className="space-y-1.5 max-w-xs">
-            <h3 className="text-base font-bold" style={{ color: 'var(--text)' }}>Practice Makes Perfect</h3>
-            <p className="text-xs leading-relaxed" style={{ color: 'var(--muted)' }}>
-              AI will ask you interview questions (with voice), show suggested answers, and score your spoken responses.
-            </p>
-          </div>
-          <div className="flex flex-col gap-2 text-xs rounded-xl p-3 w-full max-w-xs text-left" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', color: 'var(--muted)' }}>
-            <div className="flex items-center gap-2"><span>🤖</span><span>AI asks question (text + voice)</span></div>
-            <div className="flex items-center gap-2"><span>💡</span><span>Suggestion hint appears immediately</span></div>
-            <div className="flex items-center gap-2"><span>🎙</span><span>You speak your answer via mic</span></div>
-            <div className="flex items-center gap-2"><span>📊</span><span>AI scores and gives feedback</span></div>
+
+          {/* Title + subtitle */}
+          <h2 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.02em', lineHeight: 1.2 }}>
+            Practice Makes Perfect
+          </h2>
+          <p style={{ margin: '0 0 18px', fontSize: 13, color: 'var(--text)', opacity: 0.6, maxWidth: 320, lineHeight: 1.5 }}>
+            AI asks interview questions with voice, shows hints, and scores your spoken responses.
+          </p>
+
+          {/* Feature grid 2×2 */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, width: '100%', maxWidth: 360 }}>
+            {[
+              { icon: '🤖', title: 'AI Interviewer', desc: 'Asks questions via text + voice' },
+              { icon: '💡', title: 'Instant Hints', desc: 'Suggested answer appears immediately' },
+              { icon: '🎤️', title: 'Voice Answer', desc: 'Speak your response via mic' },
+              { icon: '📊', title: 'AI Scoring', desc: 'Get feedback and a score out of 10' },
+            ].map((item) => (
+              <div key={item.title} style={{
+                padding: '10px 12px',
+                background: 'var(--surface)',
+                border: '1px solid var(--line-2)',
+                borderRadius: 10,
+                textAlign: 'left',
+              }}>
+                <div style={{ fontSize: 18, marginBottom: 4 }}>{item.icon}</div>
+                <p style={{ margin: '0 0 2px', fontSize: 11, fontWeight: 700, color: 'var(--text)' }}>{item.title}</p>
+                <p style={{ margin: 0, fontSize: 10, color: 'var(--muted)', lineHeight: 1.4 }}>{item.desc}</p>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
+
+
       {/* Bottom action bar */}
-      <div className="flex items-center justify-between gap-3 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+      <div
+        className="flex items-center gap-3 pt-3"
+        style={{
+          borderTop: '1px solid rgba(255,255,255,0.06)',
+          justifyContent: sessionActive ? 'space-between' : 'center',
+        }}
+      >
         {!sessionActive ? (
-          <button onClick={handleStart} className="btn-primary w-full py-3 flex items-center justify-center gap-2" style={{ background: 'linear-gradient(135deg, #6366f1, #22d3ee)' }}>
-            <BrainCircuit className="w-4 h-4" />
+          <button
+            onClick={handleStart}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              padding: '12px 44px',
+              background: '#5254cc',
+              color: '#fff',
+              fontSize: 14, fontWeight: 600,
+              letterSpacing: '0.01em',
+              border: 'none', borderRadius: 8, cursor: 'pointer',
+              boxShadow: '0 6px 28px rgba(82,84,204,0.45), 0 1px 0 rgba(255,255,255,0.08) inset',
+              transition: 'box-shadow 150ms ease-out',
+            }}
+          >
+            <BrainCircuit size={16} />
             Start Mock Interview
           </button>
         ) : (
