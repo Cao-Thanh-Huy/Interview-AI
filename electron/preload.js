@@ -54,4 +54,10 @@ contextBridge.exposeInMainWorld('electronOverlay', {
   // Native IPC drag — polling-based, survives mouse leaving window
   dragStart: () => ipcRenderer.send('overlay:drag-start'),
   dragEnd:   () => ipcRenderer.send('overlay:drag-end'),
+  // Listen for native window resize events (OS-level resize border)
+  onWindowResized: (cb) => {
+    const handler = (_, w) => cb(w)
+    ipcRenderer.on('overlay:window-resized', handler)
+    return () => ipcRenderer.removeListener('overlay:window-resized', handler)
+  },
 })

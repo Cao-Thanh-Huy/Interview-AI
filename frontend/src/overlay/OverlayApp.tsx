@@ -26,6 +26,7 @@ declare global {
       resizeWidth:    (w: number) => void
       dragStart:      () => void
       dragEnd:        () => void
+      onWindowResized?: (cb: (w: number) => void) => () => void
     }
     electronAudio?: {
       getDesktopSourceId: () => Promise<string | null>
@@ -105,7 +106,7 @@ function TurnCard({ turn, isLatest, onTranslateBullets }: { turn: Turn; isLatest
               </svg>
             </button>
           )}
-          <div className="hub-bullets" style={{ paddingRight: !turn.isGenerating && turn.bullets.length > 0 ? 36 : 0 }}>
+          <div className="hub-bullets" style={{ paddingRight: !turn.isGenerating && turn.bullets.length > 0 ? 28 : 0 }}>
             {displayBullets.map((b, i) => (
               <div key={i} className="hub-bullet" style={{ animationDelay: `${i * 50}ms` }}>
                 <span className="bullet-dot">•</span>
@@ -293,6 +294,26 @@ export function OverlayApp() {
     return () => stop()
   }, [sessionData]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Sync Electron window width with stored hubWidth on session start ────
+  // Prevents desync where window is created at 440px but hubWidth (from
+  // localStorage) is wider, causing right-side elements (stop button) to
+  // be clipped by the viewport.
+  useEffect(() => {
+    if (!isActive) return
+    window.electronOverlay?.resizeWidth?.(hubWidth)
+  }, [isActive]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Sync hubWidth with native window resize (OS resize border) ────────────
+  useEffect(() => {
+    if (!window.electronOverlay?.onWindowResized) return
+    const cleanup = window.electronOverlay.onWindowResized((w: number) => {
+      const clamped = Math.min(720, Math.max(260, w))
+      setHubWidth(clamped)
+      hubWidthRef.current = clamped
+    })
+    return cleanup
+  }, [])
+
   // ── Stop ───────────────────────────────────────────────────────────────────
   const handleStop = useCallback(() => {
     abortRef.current?.abort()
@@ -392,85 +413,93 @@ export function OverlayApp() {
 
   return (
     <div
-      className={`overlay-container visible${hubTheme === 'light' ? ' hub-theme--light' : ''}`}
+      className={`overlay-wrapper${hubTheme === 'light' ? ' hub-theme--light' : ''}`}
       style={{
         width: hubWidth,
-        maxHeight: hubHeight,
-        '--hub-bg-alpha': hubOpacity,
-        '--font-size': `${fontSize}px`,
-      } as CSSProperties}
+      }}
       onMouseEnter={() => window.electronOverlay?.setInteractive(true)}
       onMouseLeave={() => window.electronOverlay?.setInteractive(false)}
     >
-      {/* ── Resize handle — right edge, 14px wide ─────────────────────────── */}
+      {/* ── Main container (overflow: hidden for transition) ───────────────── */}
+      <div
+        className="overlay-container visible"
+        style={{
+          maxHeight: hubHeight,
+          '--hub-bg-alpha': hubOpacity,
+          '--font-size': `${fontSize}px`,
+        } as CSSProperties}
+      >
+        {/* ── Top drag bar — prominent, always visible ────────────────────── */}
+        <div className="drag-bar" onMouseDown={handleDragMouseDown}>
+          <div className="drag-bar__dots">
+            <span /><span /><span /><span /><span /><span />
+          </div>
+
+          {/* Status indicator */}
+          <div className="drag-bar__status">
+            <span className={`status-dot ${status === 'connected' ? 'live' : 'dim'}`} />
+            {status === 'connected' && <AudioBars level={audioLevel} />}
+            <span className="drag-bar__label">
+              {status === 'connected' ? 'Live' : 'Connecting…'}
+            </span>
+          </div>
+
+          {/* Right controls: A− A+ | ◑− ◑+ | ☀/☾ | Stop */}
+          <div className="drag-bar__actions">
+            <button className="icon-btn icon-btn--lg" onClick={() => changeFont(-1)}      title="Smaller text">A−</button>
+            <button className="icon-btn icon-btn--lg" onClick={() => changeFont(1)}       title="Larger text">A+</button>
+            <div className="action-sep" />
+            <button className="icon-btn icon-btn--lg" onClick={() => changeOpacity(-0.1)} title="More transparent">◑−</button>
+            <button className="icon-btn icon-btn--lg" onClick={() => changeOpacity(0.1)}  title="More opaque">◑+</button>
+            <div className="action-sep" />
+            <button className="icon-btn icon-btn--lg" onClick={toggleTheme} title={hubTheme === 'dark' ? 'Switch to light' : 'Switch to dark'}>
+              {hubTheme === 'dark' ? '☀' : '☾'}
+            </button>
+            <div className="action-sep" />
+            <button className="icon-btn icon-btn--lg stop" onClick={handleStop} title="Stop session">■</button>
+          </div>
+        </div>
+
+        {/* ── Scrollable turn feed ───────────────────────────────────────────── */}
+        {hasContent && (
+          <div className="hub-feed" ref={feedRef}>
+            {/* Past turns */}
+            {turns.map((turn, i) => (
+              <TurnCard
+                key={turn.id}
+                turn={turn}
+                isLatest={i === turns.length - 1}
+                onTranslateBullets={translateBullets}
+              />
+            ))}
+
+            {/* Live interim caption (speech being spoken right now) */}
+            {interimText && (
+              <div className="hub-interim">
+                <span className="hub-interim__cursor" />
+                {interimText}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Empty state: waiting for speech ───────────────────────────────── */}
+        {!hasContent && (
+          <div className="hub-empty">
+            {status === 'connected' ? 'Listening…' : 'Connecting…'}
+          </div>
+        )}
+
+        {/* ── Bottom resize handle — drag up/down to resize height ───────────── */}
+        <div className="resize-handle-bottom" onMouseDown={handleBottomResizeMouseDown}>
+          <div className="resize-grip-h" />
+        </div>
+      </div>
+
+      {/* ── Resize handle — right edge, 14px wide — OUTSIDE overlay-container so
+             it is not clipped by overflow: hidden ──────────────────────────── */}
       <div className="resize-handle" onMouseDown={handleResizeMouseDown}>
         <div className="resize-grip" />
-      </div>
-
-      {/* ── Top drag bar — prominent, always visible ────────────────────── */}
-      <div className="drag-bar" onMouseDown={handleDragMouseDown}>
-        <div className="drag-bar__dots">
-          <span /><span /><span /><span /><span /><span />
-        </div>
-
-        {/* Status indicator */}
-        <div className="drag-bar__status">
-          <span className={`status-dot ${status === 'connected' ? 'live' : 'dim'}`} />
-          {status === 'connected' && <AudioBars level={audioLevel} />}
-          <span className="drag-bar__label">
-            {status === 'connected' ? 'Live' : 'Connecting…'}
-          </span>
-        </div>
-
-        {/* Right controls: A− A+ | ◑− ◑+ | ☀/☾ | Stop */}
-        <div className="drag-bar__actions">
-          <button className="icon-btn icon-btn--lg" onClick={() => changeFont(-1)}      title="Smaller text">A−</button>
-          <button className="icon-btn icon-btn--lg" onClick={() => changeFont(1)}       title="Larger text">A+</button>
-          <div className="action-sep" />
-          <button className="icon-btn icon-btn--lg" onClick={() => changeOpacity(-0.1)} title="More transparent">◑−</button>
-          <button className="icon-btn icon-btn--lg" onClick={() => changeOpacity(0.1)}  title="More opaque">◑+</button>
-          <div className="action-sep" />
-          <button className="icon-btn icon-btn--lg" onClick={toggleTheme} title={hubTheme === 'dark' ? 'Switch to light' : 'Switch to dark'}>
-            {hubTheme === 'dark' ? '☀' : '☾'}
-          </button>
-          <div className="action-sep" />
-          <button className="icon-btn icon-btn--lg stop" onClick={handleStop} title="Stop session">■</button>
-        </div>
-      </div>
-
-      {/* ── Scrollable turn feed ───────────────────────────────────────────── */}
-      {hasContent && (
-        <div className="hub-feed" ref={feedRef}>
-          {/* Past turns */}
-          {turns.map((turn, i) => (
-            <TurnCard
-              key={turn.id}
-              turn={turn}
-              isLatest={i === turns.length - 1}
-              onTranslateBullets={translateBullets}
-            />
-          ))}
-
-          {/* Live interim caption (speech being spoken right now) */}
-          {interimText && (
-            <div className="hub-interim">
-              <span className="hub-interim__cursor" />
-              {interimText}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Empty state: waiting for speech ───────────────────────────────── */}
-      {!hasContent && (
-        <div className="hub-empty">
-          {status === 'connected' ? 'Listening…' : 'Connecting…'}
-        </div>
-      )}
-
-      {/* ── Bottom resize handle — drag up/down to resize height ───────────── */}
-      <div className="resize-handle-bottom" onMouseDown={handleBottomResizeMouseDown}>
-        <div className="resize-grip-h" />
       </div>
     </div>
   )

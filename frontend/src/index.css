@@ -15,7 +15,7 @@ html, body, #root {
   height: 100%;
   margin: 0;
   padding: 0;
-  overflow: hidden;
+  /* overflow: hidden; */
 }
 
 /* ── Design Tokens ──────────────────────────────────────────────────────── */
@@ -406,4 +406,19 @@ body {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* --- Force show all question/translation lines, never clamp/ellipsis/hidden --- */
+/* NOTE: Do NOT add .contain here — it breaks flex layout (display:block !important
+   overrides inline display:flex, causing content to collapse to top). */
+.transcript-q, .question-block, .question-block p {
+  white-space: pre-wrap !important;
+  overflow: visible !important;
+  text-overflow: unset !important;
+  display: block !important;
+  max-height: none !important;
+  height: auto !important;
+  -webkit-line-clamp: unset !important;
+  line-clamp: unset !important;
+  word-break: break-word !important;
 }

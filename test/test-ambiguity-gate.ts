@@ -4,7 +4,7 @@
  * Run: npx tsx test/test-ambiguity-gate.ts
  * Requires: backend running at http://127.0.0.1:3001
  */
-import fetch from 'node-fetch'
+// Using native global fetch in Node.js 24+
 
 const API = 'http://127.0.0.1:3001/api/completion'
 const GREEN  = (s: string) => `\x1b[32m${s}\x1b[0m`

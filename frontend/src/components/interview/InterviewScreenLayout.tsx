@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Mic, MicOff, EyeOff, Square, Monitor, Settings2, Languages, Loader2 } from 'lucide-react'
-import { translateText } from '@/lib/api'
+import { QuestionBlock } from './QuestionBlock'
+import { Mic, MicOff, EyeOff, Square, Monitor, Settings2 } from 'lucide-react'
 import { useInterviewStore } from '@/store/useInterviewStore'
 import { useUiMode } from '@/store/useUiMode'
 import { StatusDot } from './StatusDot'
@@ -53,83 +53,20 @@ interface TurnCardProps {
   question: string
   questionTranslation?: string
   answer: string
-  answerTranslation?: string
   isGenerating: boolean
   isLast: boolean
 }
 
-function TurnCardInner({ id, question, questionTranslation, answer, answerTranslation, isGenerating, isLast }: TurnCardProps) {
-  const [showTranslation, setShowTranslation] = useState(false)
-  const [isTranslating, setIsTranslating] = useState(false)
-
-  const handleToggleTranslate = useCallback(async () => {
-    if (showTranslation) {
-      setShowTranslation(false)
-      return
-    }
-    if (answerTranslation) {
-      setShowTranslation(true)
-      return
-    }
-    try {
-      setIsTranslating(true)
-      const result = await translateText(answer)
-      useInterviewStore.getState().updateTurnAnswerTranslation(id, result)
-      setShowTranslation(true)
-    } catch (err) {
-      console.error('Failed to translate answer:', err)
-    } finally {
-      setIsTranslating(false)
-    }
-  }, [id, answer, answerTranslation, showTranslation])
-
+function TurnCardInner({ id, question, questionTranslation, answer, isGenerating, isLast }: TurnCardProps) {
   return (
-    <div className="contain" style={{ paddingBottom: 0 }}>
+    <div className="contain" style={{ paddingBottom: 0, background: 'none', boxShadow: 'none', maxWidth: '100%', overflow: 'visible' }}>
       {/* Question */}
-      <p className="transcript-q" style={{ margin: 0, marginBottom: questionTranslation ? 4 : 8 }}>
-        {question}
-      </p>
+      <QuestionBlock question={question} questionTranslation={questionTranslation} />
 
-      {/* Question translation — small italic line below */}
-      {questionTranslation && (
-        <p style={{ margin: 0, marginBottom: 8, fontSize: 11, color: 'var(--muted)', fontStyle: 'italic', paddingLeft: 8 }}>
-          🇻🇳 {questionTranslation}
-        </p>
-      )}
-
-      {/* Suggestion */}
+      {/* Suggestion/Answer */}
       {(answer || isGenerating) && (
         <div style={{ paddingLeft: 12, borderLeft: '2px solid var(--line-2)', marginBottom: 4 }}>
-          {/* Translate toggle — only shown after generation completes */}
-          {!isGenerating && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
-              <button
-                onClick={handleToggleTranslate}
-                disabled={isTranslating}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 3,
-                  fontSize: 10, padding: '2px 6px', borderRadius: 4,
-                  background: showTranslation ? 'rgba(99,102,241,0.1)' : 'transparent',
-                  color: showTranslation ? 'var(--primary)' : 'var(--muted)',
-                  border: '1px solid',
-                  borderColor: showTranslation ? 'var(--primary)' : 'var(--line)',
-                  cursor: isTranslating ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.15s',
-                  opacity: isTranslating ? 0.6 : 1,
-                }}
-                title={showTranslation ? 'Xem tiếng Anh' : 'Dịch sang tiếng Việt'}
-              >
-                {isTranslating
-                  ? <Loader2 size={9} className="animate-spin" />
-                  : <Languages size={9} />}
-                <span>{showTranslation ? 'Gốc' : 'Dịch'}</span>
-              </button>
-            </div>
-          )}
-          {renderSuggestion(
-            showTranslation && answerTranslation ? answerTranslation : answer,
-            isGenerating
-          )}
+          {renderSuggestion(answer, isGenerating)}
         </div>
       )}
 
@@ -417,7 +354,6 @@ export function InterviewScreenLayout({ status, audioSource, audioLevel, startTi
             question={turn.question}
             questionTranslation={turn.questionTranslation}
             answer={turn.answer}
-            answerTranslation={turn.answerTranslation}
             isGenerating={turn.isGenerating}
             isLast={i === turns.length - 1 && !currentInterimCaption}
           />

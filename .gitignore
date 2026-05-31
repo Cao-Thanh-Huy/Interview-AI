@@ -75,3 +75,6 @@ license.key
 
 # Electron user data cache (per-project isolation)
 .electron-cache/
+
+# Continue.dev local config (API keys, per-machine model settings)
+.continue/

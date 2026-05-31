@@ -188,12 +188,8 @@ export function HistoryReviewPanel() {
                         {formatDate(session.startedAt)}
                       </p>
                       {(session.context || session.firstQuestion) && (
-                        <p style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 2 }}>
-                          {session.context
-                            ? session.context
-                            : (session.firstQuestion!.length > 80
-                                ? session.firstQuestion!.slice(0, 80) + '…'
-                                : session.firstQuestion)}
+                        <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                          {session.context ? session.context : session.firstQuestion}
                         </p>
                       )}
                     </div>

@@ -3,7 +3,7 @@ import { streamText } from 'hono/streaming'
 import groq, { GROQ_MODEL } from '../lib/groq.js'
 import { buildPrompt, buildRAGPrompt, buildSummarizerPrompt, buildTrainingSuggestionPrompt, buildInterviewerQuestionPrompt, buildMockScoringPrompt, type HistoryTurn } from '../lib/prompts.js'
 import { semanticSearch, isLocalStoreEnabled } from '../lib/localStore.js'
-import { isFillerTranscript, buildRetrievalQuery, buildEnrichedRetrievalQuery, isAmbiguousTranscript, getClarificationResponse } from '../lib/queryUtils.js'
+import { buildRetrievalQuery, buildEnrichedRetrievalQuery, getClarificationResponse } from '../lib/queryUtils.js'
 import { appendTurn } from '../lib/historyStore.js'
 import { hotMemory } from '../lib/hotMemory.js'
 import { correctASRTranscript, getASRCorrections } from '../lib/asrCorrection.js'
@@ -43,16 +43,14 @@ completionRouter.post('/translate', async (c) => {
 const CONTEXT_WINDOW_TURNS = 8 // last N turns sent for context window management
 
 completionRouter.post('/', async (c) => {
-  const body = await c.req.json<{
-    transcript: string
-    context?: string
-    sessionId?: string
-    history?: HistoryTurn[]
-    mode?: 'copilot' | 'summarizer' | 'training' | 'interviewer' | 'mock-scoring'
-    // mock-scoring extras
-    suggestion?: string
-    userAnswer?: string
-  }>()
+  console.log('[DEBUG] POST /completion called');
+  let body;
+  try {
+    body = await c.req.json();
+  } catch (err) {
+    console.error('[DEBUG] Error parsing JSON body:', err);
+    return c.json({ error: 'Invalid JSON body' }, 400);
+  }
 
   // Normalise to string — guard against non-string values from frontend
   const rawTranscript = typeof body.transcript === 'string'
@@ -219,16 +217,10 @@ completionRouter.post('/', async (c) => {
   const hasHistory = recentHistory.length > 0
   let prompt: string
 
-  // Check for filler/too-short transcript
-  const isFiller = isFillerTranscript(transcript)
-
-  // ── Early Ambiguity Gate (filler path) ──────────────────────────────────
-  // If transcript is filler/too-short AND there's no conversation history,
-  // it's definitely garbled noise — ask for clarification immediately.
-  // If there IS history, a short input like "and also?" could be a valid follow-up.
-  if (isFiller && !hasHistory) {
+  // Lọc nhiễu tối thiểu: Chỉ bỏ qua nếu transcript quá ngắn (< 3 kí tự)
+  if (transcript.trim().length < 3) {
     const clarification = getClarificationResponse()
-    console.log(`[Gate] Filler + no history → clarification: "${transcript}"`)
+    console.log(`[Gate] Too short (<3 chars) → clarification: "${transcript}"`)
     return streamText(c, async (stream) => {
       await stream.write(clarification)
     })
@@ -240,7 +232,7 @@ completionRouter.post('/', async (c) => {
     hotMemory.setActiveInterviewState(historyText)
   }
 
-  if (!isFiller && isLocalStoreEnabled()) {
+  if (isLocalStoreEnabled()) {
     // ── Enriched RAG retrieval ──────────────────────────────────────────────
     // For short follow-ups ("what about Athena?"), prepend the current topic
     // from hotMemory so RAG can find relevant context even without explicit keywords.
@@ -255,53 +247,14 @@ completionRouter.post('/', async (c) => {
       console.error('LocalStore search error:', err)
     }
 
-    // ── Post-RAG Ambiguity Gate ─────────────────────────────────────────────
-    // Trigger clarification when the question doesn't match any known topic.
-    // Two signals must BOTH be true:
-    //   1. No strong RAG match: 0 results OR all results score < MIN_RAG_SCORE
-    //      (weak matches like "seasonal fluctuation" → "freshness SLA" at 0.4 don't count)
-    //   2. Transcript is structurally ambiguous (incoherent, not data-engineering related)
-    //
-    // hasHistory lenient mode: if there's conversation context and RAG found
-    // something (even weak), trust the history → don't ask to repeat.
     const MIN_RAG_SCORE = 0.52
     const hasStrongRAGMatch = ragResults.some(r => r.score >= MIN_RAG_SCORE)
 
-    if (!hasStrongRAGMatch && isAmbiguousTranscript(transcript, hasHistory)) {
-      const clarification = getClarificationResponse()
-      console.log(`[Gate] Ambiguous + weak RAG (top score: ${ragResults[0]?.score?.toFixed(3) ?? 'none'}) → clarification: "${transcript}"`)
-      return streamText(c, async (stream) => {
-        await stream.write(clarification)
-      })
-    }
-
-    if (ragResults.length > 0) {
+    if (ragResults.length > 0 && hasStrongRAGMatch) {
       // Cập nhật Topic hiện tại lên RAM Hot Memory CHỈ KHI RAG match đủ mạnh.
-      // Weak match không nên override topic hiện tại — tránh "Snowflake" topic
-      // persist sang câu hoàn toàn khác chủ đề ("Do you know Cortex AI?")
       const topMatch = ragResults[0]
-      if (topMatch.question && topMatch.score >= MIN_RAG_SCORE) {
+      if (topMatch.question) {
         hotMemory.setCurrentTopic(topMatch.question)
-      } else if (topMatch.score < MIN_RAG_SCORE) {
-        // RAG kéo được kết quả nhưng score thấp → chủ đề mới, clear topic cũ
-        hotMemory.setCurrentTopic(null)
-      }
-
-      // ── Secondary ambiguity gate (trong RAG hit path) ───────────────────────
-      // Vấn đề: câu garbled ("Wow. What a the next day.") vẫn được trả lời vì
-      // RAG hit topic (Lakehouse) → LLM bịa chi tiết timeline không có trong KB.
-      //
-      // Fix: nếu câu vừa garbled (isAmbiguousTranscript) vừa RAG score chưa đủ
-      // HIGH_CONFIDENCE (0.72), prefer clarification thay vì hallucinate.
-      // Score >= 0.72 = câu hỏi rõ ràng khớp tốt → trust it, answer it.
-      // Score < 0.72 nhưng ambiguous = câu garbled kéo được topic ngẫu nhiên.
-      const HIGH_CONFIDENCE_SCORE = 0.72
-      if (topMatch.score < HIGH_CONFIDENCE_SCORE && isAmbiguousTranscript(transcript, hasHistory)) {
-        const clarification = getClarificationResponse()
-        console.log(`[Gate] RAG hit but garbled (score: ${topMatch.score.toFixed(3)} < ${HIGH_CONFIDENCE_SCORE}) → clarification: "${transcript}"`)
-        return streamText(c, async (stream) => {
-          await stream.write(clarification)
-        })
       }
 
       // Trích xuất các tri thức tìm được từ DB
@@ -320,17 +273,9 @@ completionRouter.post('/', async (c) => {
 
       prompt = buildRAGPrompt(context, transcript, combinedRagContext, recentHistory)
     } else {
-      // RAG miss: 0 results in KB for this question.
-      // If there's NO conversation history → we have zero context to ground an answer.
-      // Returning a hallucinated answer (especially about identity) is worse than asking to clarify.
-      if (!hasHistory && !context?.trim()) {
-        const clarification = getClarificationResponse()
-        console.log(`[Gate] RAG miss + no history + no context → clarification: "${transcript}"`)
-        return streamText(c, async (stream) => {
-          await stream.write(clarification)
-        })
-      }
-      // Has history or explicit context → LLM can use that to attempt a coherent answer
+      // RAG miss hoặc không có kết quả tin cậy: không chặn nữa!
+      // Gửi thẳng sang cho LLM tự do phản hồi tự nhiên dựa trên context và history
+      console.log(`[RAG] Miss/Weak match (top score: ${ragResults[0]?.score?.toFixed(3) ?? 'none'}) → falling back to conversational LLM`)
       const ramContext = hotMemory.getCompactContextMarkdown()
       const combinedContext = [context, ramContext].filter(Boolean).join('\n\n')
       prompt = buildPrompt(combinedContext, transcript, recentHistory)

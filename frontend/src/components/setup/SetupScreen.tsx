@@ -260,7 +260,12 @@ export function SetupScreen() {
     if (electronSession) {
       // Electron: 2-window mode — overlay takes over, main window hides
       const { context, sessionId } = useInterviewStore.getState()
-      electronSession.start({ context, sessionId })
+      const hubWidth = Number(localStorage.getItem('hub-width'))
+      electronSession.start({
+        context,
+        sessionId,
+        hubWidth: (hubWidth >= 260 && hubWidth <= 720) ? hubWidth : 440,
+      })
       setIsStarting(false)  // overlay handles everything from here
     } else {
       // Browser fallback: single-window mode

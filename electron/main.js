@@ -17,6 +17,17 @@ app.commandLine.appendSwitch('remote-debugging-port', '9222')
 const USER_DATA_PATH = path.join(__dirname, '..', '.electron-cache')
 app.setPath('userData', USER_DATA_PATH)
 
+// Simple key-value config file for persisted preferences (hubWidth)
+const CONFIG_PATH = path.join(USER_DATA_PATH, 'overlay-config.json')
+function readConfig() {
+  try { return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')) }
+  catch { return {} }
+}
+function writeConfig(obj) {
+  try { fs.writeFileSync(CONFIG_PATH, JSON.stringify(obj), 'utf-8') }
+  catch { /* best-effort */ }
+}
+
 // ─── Single Instance Lock ──────────────────────────────────────────────────────
 const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
@@ -214,7 +225,11 @@ function setupDisplayMediaHandler(win) {
 // ─── Create Overlay Window ─────────────────────────────────────────────────────
 async function createOverlay() {
   const { width } = screen.getPrimaryDisplay().workAreaSize
-  const W = 440
+  // Read persisted hubWidth so the overlay window matches the user's stored
+  // preference from the start (avoids flash of wrong size before session:start
+  // syncs it). Falls back to 440 if never set.
+  const storedHubWidth = readConfig().hubWidth ?? 440
+  const W = Math.min(720, Math.max(260, storedHubWidth))
 
   overlayWindow = new BrowserWindow({
     width: W,
@@ -240,6 +255,10 @@ async function createOverlay() {
     },
   })
 
+  // Force content area to exactly match intended dimensions (invisible OS resize
+  // borders on Windows can cause getSize/setSize to include non-client area)
+  overlayWindow.setContentSize(W, 600)
+
   // Overlay floats above everything (screen-saver level)
   overlayWindow.setAlwaysOnTop(true, 'screen-saver')
   // Start click-through by default (ghost mode)
@@ -258,6 +277,15 @@ async function createOverlay() {
   )
 
   overlayWindow.on('closed', () => { overlayWindow = null; overlayReady = false })
+
+  // Forward native window resize events to renderer so hubWidth stays in sync
+  // Prevents the window and CSS width from desynchronising
+  overlayWindow.on('resize', () => {
+    if (overlayWindow && !overlayWindow.isDestroyed()) {
+      const [w] = overlayWindow.getContentSize()
+      overlayWindow.webContents.send('overlay:window-resized', w)
+    }
+  })
 
   // When overlay finishes loading, flush any buffered session data
   overlayWindow.webContents.on('did-finish-load', () => {
@@ -324,9 +352,11 @@ ipcMain.on('log:file', (_, msg) => {
 // Resize overlay width — called by resize-handle drag in renderer
 ipcMain.on('overlay:resize-width', (_, newWidth) => {
   if (!overlayWindow) return
-  const clamped = Math.min(700, Math.max(280, Math.round(newWidth)))
-  const [, h] = overlayWindow.getSize()
-  overlayWindow.setSize(clamped, h)
+  const clamped = Math.min(720, Math.max(260, Math.round(newWidth)))
+  const [, h] = overlayWindow.getContentSize()
+  overlayWindow.setContentSize(clamped, h)
+  // Persist so createOverlay() on next launch picks up the right size
+  writeConfig({ ...readConfig(), hubWidth: clamped })
 })
 
 // Native drag via polling — more robust than CSS -webkit-app-region: drag
@@ -378,6 +408,14 @@ ipcMain.handle('audio:get-desktop-source-id', async () => {
 // ─── Session IPC ───────────────────────────────────────────────────────────────
 ipcMain.on('session:start', (_, data) => {
   if (!overlayWindow) return
+
+  // Sync overlay window width with stored hubWidth before showing
+  // Prevents CSS/viewport desync (e.g. hubWidth=512 but window=440)
+  const w = Math.min(720, Math.max(260, data.hubWidth ?? 440))
+  const [, h] = overlayWindow.getContentSize()
+  overlayWindow.setContentSize(w, h)
+  writeConfig({ ...readConfig(), hubWidth: w })
+
   // Hide main window, show overlay
   mainWindow?.hide()
   if (overlayReady) {
