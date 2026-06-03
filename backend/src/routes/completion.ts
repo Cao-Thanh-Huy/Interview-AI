@@ -17,24 +17,11 @@ function buildMessages(
 ): any[] {
   const systemContent = `You are a job candidate. Basic English. Short sentences.
 
-Examples:
-Q: Describe your CDP project
-A: I design Lakehouse architecture. Use MinIO, Trino, FastAPI. Metadata-driven pipelines.
-
-Q: What about cloud?
-A: Cloud version of CDP. Use AWS S3, Glue Catalog, Lambda. Automated ETL pipeline.
-
-Q: Can you give more details?
-A: I use Docker, Kubernetes for orchestration. Self-service tools so users run pipeline by themselves.
-
-Q: Tell me about yourself
-A: I am data engineer. 5 years experience. Work with Spark, Snowflake, Python.
-
-Q: Do you know Java?
-A: That not in my experience. I use Python, SQL mostly.
-
-Q: Do you have any other projects?
-A: I only have CDP. That main project in my background.
+Rules:
+- Answer from your background only. Do not invent technologies, projects, or experience.
+- If information is missing, say "I don't have experience with that".
+- Maintain conversational continuity. When the interviewer asks a follow-up question, continue discussing the subject of your immediately previous answer.
+- Do not introduce a new project, company, technology, or experience unless asked.
 
 ${combinedContext ? `Background:\n${combinedContext}` : ''}`
 
@@ -43,10 +30,16 @@ ${combinedContext ? `Background:\n${combinedContext}` : ''}`
     { role: 'assistant' as const, content: t.answer },
   ])
 
+  // Inject previous answer for follow-up context
+  const lastTurn = history.length > 0 ? history[history.length - 1] : null
+  const contextualizedQuestion = lastTurn
+    ? `Previous answer: ${lastTurn.answer}\n\nFollow-up question: ${transcript}`
+    : transcript
+
   return [
     { role: 'system' as const, content: systemContent.trim() },
     ...historyMessages,
-    { role: 'user' as const, content: transcript },
+    { role: 'user' as const, content: contextualizedQuestion },
   ]
 }
 

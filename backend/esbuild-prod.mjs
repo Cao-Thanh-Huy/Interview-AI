@@ -17,10 +17,6 @@ await build({
   platform: 'node',
   target: 'node20',
   external: [
-    '@xenova/transformers',
-    'better-sqlite3',
-    'onnxruntime-node',
-    'onnxruntime-web',
     'sharp',
   ],
   // createRequire shim: allows CJS modules (dotenv, ws, etc.) to call require()

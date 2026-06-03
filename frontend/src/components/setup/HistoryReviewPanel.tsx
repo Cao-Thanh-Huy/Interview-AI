@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { RefreshCw, CheckCircle, AlertCircle, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
+import { RefreshCw, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 import { listHistory, getHistorySession } from '@/lib/api'
 import type { SessionMetadata, TurnEntry } from '@/lib/types'
 

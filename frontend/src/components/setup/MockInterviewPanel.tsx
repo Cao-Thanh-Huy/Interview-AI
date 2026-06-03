@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BrainCircuit, Mic, MicOff, ChevronRight, RotateCcw, Volume2, VolumeX, Loader2, CheckCircle2, XCircle } from 'lucide-react'
-import { cn } from '@/lib/utils'
 import { streamCompletion, fetchTTSAudio, streamMockScoring } from '@/lib/api'
 import { useInterviewStore } from '@/store/useInterviewStore'
 import type { MockTurn, MockTurnPhase } from '@/lib/types'
