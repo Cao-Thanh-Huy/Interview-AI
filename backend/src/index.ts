@@ -6,7 +6,8 @@ import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
 import { completionRouter } from './routes/completion.js'
 import { deepgramRouter } from './routes/deepgram.js'
-import { knowledgeRouter } from './routes/knowledge.js'
+import { cvRouter } from './routes/cv.js'
+import { historyRouter } from './routes/history.js'
 import { licenseRouter } from './routes/license.js'
 import { settingsRouter } from './routes/settings.js'
 import { debugRouter } from './routes/debug.js'
@@ -42,10 +43,9 @@ app.route('/api/license', licenseRouter)     // luôn public — UI kích hoạt
 app.route('/api/debug', debugRouter)         // dev-only debug log receiver (no guard)
 app.route('/api/completion', completionRouter)
 app.route('/api/deepgram', deepgramRouter)
-app.route('/api/knowledge', knowledgeRouter)
+app.route('/api/cv', cvRouter)
+app.route('/api/history', historyRouter)
 app.route('/api/settings', settingsRouter)   // public — không cần license
-
-// History routes are sub-routes of the knowledge router: /api/knowledge/history[/:sessionId]
 
 app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }))
 
@@ -78,21 +78,11 @@ if (frontendDistPath) {
 }
 
 import groq, { GROQ_MODEL } from './lib/groq.js'
-import { semanticSearch } from './lib/localStore.js'
 
 async function warmupSystem() {
   console.log('⚡ Warm-up: Starting system warming sequence...')
-  
-  // 1. Warm up SQLite & Local ONNX Embedding inference
-  try {
-    const start = Date.now()
-    await semanticSearch('warmup query', 1)
-    console.log(`⚡ Warm-up: SQLite page cache & local ONNX embedding model warmed in ${Date.now() - start}ms`)
-  } catch (err) {
-    console.warn('⚡ Warm-up: Local database warming failed:', err)
-  }
 
-  // 2. Warm up Groq connection pool (establish TCP/TLS handshake in background)
+  // Warm up Groq connection pool (establish TCP/TLS handshake in background)
   const apiKey = process.env.GROQ_API_KEY
   if (apiKey) {
     try {

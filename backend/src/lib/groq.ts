@@ -25,4 +25,6 @@ const groqProxy = new Proxy({} as Groq, {
 
 export default groqProxy
 
-export const GROQ_MODEL = 'llama-3.1-8b-instant'
+export const GROQ_MODEL = 'llama-3.3-70b-versatile'  // 70b: chính xác hơn. Đổi sang 'llama-3.1-8b-instant' nếu muốn nhanh hơn
+// Model cho CV summarization — chất lượng cao hơn, không cần realtime
+export const GROQ_MODEL_SUMMARY = 'qwen/qwen3-32b'

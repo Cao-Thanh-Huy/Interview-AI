@@ -1,11 +1,12 @@
 import React from 'react'
-import { Mic, BrainCircuit, History, Target, Settings } from 'lucide-react'
+import { Mic, BrainCircuit, History, Target, UserCircle, Settings } from 'lucide-react'
 
-export type SidebarTab = 'setup' | 'training' | 'history' | 'mock'
+export type SidebarTab = 'setup' | 'profile' | 'training' | 'history' | 'mock'
 
 const NAV: { id: SidebarTab; icon: React.ReactNode; label: string }[] = [
   { id: 'setup',    icon: <Mic size={18} />,          label: 'Setup Session' },
-  { id: 'training', icon: <BrainCircuit size={18} />, label: 'Pre-Interview Training' },
+  { id: 'profile',  icon: <UserCircle size={18} />,   label: 'My Profile' },
+  { id: 'training', icon: <BrainCircuit size={18} />, label: 'Training' },
   { id: 'history',  icon: <History size={18} />,      label: 'Interview History' },
   { id: 'mock',     icon: <Target size={18} />,       label: 'Mock Interview' },
 ]
@@ -52,7 +53,7 @@ function SidebarInner({ activeTab, onTabChange, onSettings }: Props) {
         ))}
       </nav>
 
-      {/* Settings — bottom left, always visible on all tabs */}
+      {/* Settings — bottom left */}
       <button
         onClick={onSettings}
         title="Settings"

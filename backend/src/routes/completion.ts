@@ -1,14 +1,54 @@
 import { Hono } from 'hono'
 import { streamText } from 'hono/streaming'
 import groq, { GROQ_MODEL } from '../lib/groq.js'
-import { buildPrompt, buildRAGPrompt, buildSummarizerPrompt, buildTrainingSuggestionPrompt, buildInterviewerQuestionPrompt, buildMockScoringPrompt, type HistoryTurn } from '../lib/prompts.js'
-import { semanticSearch, isLocalStoreEnabled } from '../lib/localStore.js'
-import { buildRetrievalQuery, buildEnrichedRetrievalQuery, getClarificationResponse } from '../lib/queryUtils.js'
-import { appendTurn } from '../lib/historyStore.js'
+import type { HistoryTurn } from '../lib/prompts.js'
+import { getClarificationResponse } from '../lib/queryUtils.js'
 import { hotMemory } from '../lib/hotMemory.js'
+import { appendTurn } from '../lib/historyStore.js'
 import { correctASRTranscript, getASRCorrections } from '../lib/asrCorrection.js'
 
 export const completionRouter = new Hono()
+
+/** Build messages array: system (rules + CV) → history (user/assistant) → current question */
+function buildMessages(
+  combinedContext: string,
+  transcript: string,
+  history: HistoryTurn[],
+): any[] {
+  const systemContent = `You are a job candidate. Basic English. Short sentences.
+
+Examples:
+Q: Describe your CDP project
+A: I design Lakehouse architecture. Use MinIO, Trino, FastAPI. Metadata-driven pipelines.
+
+Q: What about cloud?
+A: Cloud version of CDP. Use AWS S3, Glue Catalog, Lambda. Automated ETL pipeline.
+
+Q: Can you give more details?
+A: I use Docker, Kubernetes for orchestration. Self-service tools so users run pipeline by themselves.
+
+Q: Tell me about yourself
+A: I am data engineer. 5 years experience. Work with Spark, Snowflake, Python.
+
+Q: Do you know Java?
+A: That not in my experience. I use Python, SQL mostly.
+
+Q: Do you have any other projects?
+A: I only have CDP. That main project in my background.
+
+${combinedContext ? `Background:\n${combinedContext}` : ''}`
+
+  const historyMessages = history.flatMap((t) => [
+    { role: 'user' as const, content: t.question },
+    { role: 'assistant' as const, content: t.answer },
+  ])
+
+  return [
+    { role: 'system' as const, content: systemContent.trim() },
+    ...historyMessages,
+    { role: 'user' as const, content: transcript },
+  ]
+}
 
 completionRouter.post('/translate', async (c) => {
   const { text } = await c.req.json<{ text: string }>()
@@ -35,24 +75,21 @@ completionRouter.post('/translate', async (c) => {
     const translatedText = response.choices[0]?.message?.content?.trim() || ''
     return c.json({ translation: translatedText })
   } catch (err) {
-    console.error('Translation error in /translate route:', err)
+    console.error('Translation error:', err)
     return c.json({ error: 'Translation failed' }, 500)
   }
 })
 
-const CONTEXT_WINDOW_TURNS = 8 // last N turns sent for context window management
+const CONTEXT_WINDOW_TURNS = 5 // gửi 5 câu hỏi gần nhất
 
 completionRouter.post('/', async (c) => {
-  console.log('[DEBUG] POST /completion called');
-  let body;
+  let body
   try {
-    body = await c.req.json();
-  } catch (err) {
-    console.error('[DEBUG] Error parsing JSON body:', err);
-    return c.json({ error: 'Invalid JSON body' }, 400);
+    body = await c.req.json()
+  } catch {
+    return c.json({ error: 'Invalid JSON body' }, 400)
   }
 
-  // Normalise to string — guard against non-string values from frontend
   const rawTranscript = typeof body.transcript === 'string'
     ? body.transcript
     : String(body.transcript ?? '')
@@ -62,112 +99,32 @@ completionRouter.post('/', async (c) => {
     return c.json({ error: 'transcript is required' }, 400)
   }
 
-  // ── ASR Phonetic Correction ──────────────────────────────────────────────
-  // Apply before ALL downstream steps (RAG retrieval + LLM prompt)
-  // so "no flag" → "Snowflake", "data bricks" → "Databricks", etc.
+  // ASR correction
   const transcript = correctASRTranscript(rawTranscript)
   if (transcript !== rawTranscript) {
     const fixes = getASRCorrections(rawTranscript)
-    console.log(`[ASR] Corrected transcript: "${rawTranscript}" → "${transcript}"`)
-    fixes.forEach(f => console.log(`  [ASR]  "${f.from}" → "${f.to}"`))
+    console.log(`[ASR] Corrected: "${rawTranscript}" → "${transcript}"`)
+    fixes.forEach(f => console.log(`  [ASR] "${f.from}" → "${f.to}"`))
   }
 
-  // ── Mock Interview: AI generates the next interview question ────────────────
-  if (mode === 'interviewer') {
-    let kbContext = ''
-    // 30% chance: pull a relevant topic from KB to base the question on
-    if (isLocalStoreEnabled() && Math.random() < 0.3) {
-      try {
-        // Use a broad random query to surface diverse KB topics
-        const queries = [
-          'data pipeline architecture',
-          'SQL performance optimization',
-          'cloud data warehouse',
-          'ETL processing',
-          'streaming data',
-          'distributed systems',
-          'database design',
-        ]
-        const randomQuery = queries[Math.floor(Math.random() * queries.length)]
-        const kbResults = await semanticSearch(randomQuery, 3, true)
-        if (kbResults.length > 0) {
-          kbContext = kbResults
-            .map((r) => r.question ? `Topic: ${r.question}` : '')
-            .filter(Boolean)
-            .join('\n')
-        }
-      } catch (err) {
-        console.warn('[Mock] KB search error:', err)
-      }
-    }
-
-    const prompt = buildInterviewerQuestionPrompt(context, history, kbContext)
-    let groqStream
-    try {
-      groqStream = await groq.chat.completions.create({
-        messages: [{ role: 'user', content: prompt }],
-        model: GROQ_MODEL,
-        temperature: 0.85,
-        max_tokens: 80,
-        stream: true,
-      })
-    } catch (err) {
-      console.error('Groq API error (interviewer):', err)
-      return c.json({ error: 'AI service temporarily unavailable. Please try again.' }, 503)
-    }
-    return streamText(c, async (stream) => {
-      for await (const chunk of groqStream) {
-        const content = chunk.choices[0]?.delta?.content
-        if (content) await stream.write(content)
-      }
-    })
-  }
-
-  // ── Mock Interview: Score the user's spoken answer ───────────────────────────
-  if (mode === 'mock-scoring') {
-    const { suggestion = '', userAnswer = '' } = body
-    const questionText = rawTranscript  // transcript field carries the question
-    const prompt = buildMockScoringPrompt(questionText, suggestion, userAnswer)
-    let groqStream
-    try {
-      groqStream = await groq.chat.completions.create({
-        messages: [{ role: 'user', content: prompt }],
-        model: GROQ_MODEL,
-        temperature: 0.3,
-        max_tokens: 120,
-        stream: true,
-      })
-    } catch (err) {
-      console.error('Groq API error (mock-scoring):', err)
-      return c.json({ error: 'AI service temporarily unavailable. Please try again.' }, 503)
-    }
-    return streamText(c, async (stream) => {
-      for await (const chunk of groqStream) {
-        const content = chunk.choices[0]?.delta?.content
-        if (content) await stream.write(content)
-      }
-    })
-  }
-
-  // Training mode: search local database first — use stored knowledge if found, else generate fresh
+  // ---- Training mode: generate draft answer ----
   if (mode === 'training') {
-    let ragContext = ''
-    if (isLocalStoreEnabled()) {
-      try {
-        const results = await semanticSearch(transcript, 10, true)  // relaxedGating + topK=10: training cần recall cao, data nhỏ
-        if (results.length > 0) {
-          ragContext = results
-            .map((r) => r.question
-              ? `Q: ${r.question}\nA: ${r.answer ?? r.text ?? ''}`
-              : (r.text ?? ''))
-            .filter(Boolean)
-            .join('\n\n')
-        }
-      } catch (err) {
-        console.warn('LocalStore search error (training):', err)
-      }
-    }
-    const prompt = buildTrainingSuggestionPrompt(context, transcript, ragContext)
+    const candidateSummary = hotMemory.getCandidateSummary()
+    const combinedContext = (candidateSummary && context.includes(candidateSummary.slice(0, 100)))
+      ? candidateSummary
+      : [context, candidateSummary].filter(Boolean).join('\n\n')
+
+    const prompt = `You are a job candidate with basic English.
+
+Rules:
+1. Use "I". Talk about your experience from your background.
+2. Short simple sentences. Basic words.
+3. NO definitions, NO textbook language.
+4. If background no info, say "I don't have that".
+
+${combinedContext ? `Your background:\n${combinedContext}\n\n` : ''}Practice question: "${transcript}"
+
+Draft answer:`
     let groqStream
     try {
       groqStream = await groq.chat.completions.create({
@@ -178,8 +135,8 @@ completionRouter.post('/', async (c) => {
         stream: true,
       })
     } catch (err) {
-      console.error('Groq API error (training):', err)
-      return c.json({ error: 'AI service temporarily unavailable. Please try again.' }, 503)
+      console.error('Groq error (training):', err)
+      return c.json({ error: 'AI service unavailable' }, 503)
     }
     return streamText(c, async (stream) => {
       for await (const chunk of groqStream) {
@@ -189,20 +146,42 @@ completionRouter.post('/', async (c) => {
     })
   }
 
-  if (mode === 'summarizer') {
-    const prompt = buildSummarizerPrompt(transcript)
+  // ---- Mock Interview: Score the user's spoken answer ----
+  if (mode === 'mock-scoring') {
+    const { suggestion = '', userAnswer = '' } = body
+    const questionText = rawTranscript
+    const prompt = `You are evaluating a candidate's spoken answer in a mock interview.
+
+Question asked: "${questionText}"
+
+Ideal answer (key points to cover):
+${suggestion}
+
+Candidate's actual answer:
+"${userAnswer}"
+
+Score this answer. Output EXACTLY in this format (no extra text):
+SCORE: X/10
+✓ [one good thing they said, max 10 words]
+✓ [another good point if applicable, or omit]
+✗ [one key thing missing or weak, max 10 words]
+✗ [another gap if applicable, or omit]
+
+Be concise. If the answer is blank or very short, score 0-2 and note it.
+Only output the score block above — no intro, no commentary.`
+
     let groqStream
     try {
       groqStream = await groq.chat.completions.create({
         messages: [{ role: 'user', content: prompt }],
         model: GROQ_MODEL,
-        temperature: 0.7,
-        max_tokens: 2000,
+        temperature: 0.3,
+        max_tokens: 120,
         stream: true,
       })
     } catch (err) {
-      console.error('Groq API error:', err)
-      return c.json({ error: 'AI service temporarily unavailable. Please try again.' }, 503)
+      console.error('Groq error (mock-scoring):', err)
+      return c.json({ error: 'AI service unavailable' }, 503)
     }
     return streamText(c, async (stream) => {
       for await (const chunk of groqStream) {
@@ -212,96 +191,47 @@ completionRouter.post('/', async (c) => {
     })
   }
 
-  // --- Live Interview (copilot) mode ---
+  // ---- Live Interview (copilot) mode ----
   const recentHistory = history.slice(-CONTEXT_WINDOW_TURNS)
-  const hasHistory = recentHistory.length > 0
-  let prompt: string
 
-  // Lọc nhiễu tối thiểu: Chỉ bỏ qua nếu transcript quá ngắn (< 3 kí tự)
+  // Transcript quá ngắn → clarification
   if (transcript.trim().length < 3) {
     const clarification = getClarificationResponse()
-    console.log(`[Gate] Too short (<3 chars) → clarification: "${transcript}"`)
     return streamText(c, async (stream) => {
       await stream.write(clarification)
     })
   }
 
-  // Cập nhật trạng thái cuộc trò chuyện gần nhất vào RAM hotMemory để lưu vết
-  if (hasHistory) {
+  // Cập nhật conversation state vào hotMemory
+  if (recentHistory.length > 0) {
     const historyText = recentHistory.map((t) => `Q: ${t.question}\nA: ${t.answer}`).join('\n')
     hotMemory.setActiveInterviewState(historyText)
   }
 
-  if (isLocalStoreEnabled()) {
-    // ── Enriched RAG retrieval ──────────────────────────────────────────────
-    // For short follow-ups ("what about Athena?"), prepend the current topic
-    // from hotMemory so RAG can find relevant context even without explicit keywords.
-    const retrievalQuery = buildEnrichedRetrievalQuery(transcript, hotMemory.getCurrentTopic())
-    const isEnriched = retrievalQuery !== buildRetrievalQuery(transcript)
-    console.log(`[RAG] query: "${retrievalQuery}"${isEnriched ? ' (topic-enriched)' : ''}`)
-
-    let ragResults: import('../lib/localStore.js').SearchResult[] = []
-    try {
-      ragResults = await semanticSearch(retrievalQuery, 5)
-    } catch (err) {
-      console.error('LocalStore search error:', err)
-    }
-
-    const MIN_RAG_SCORE = 0.52
-    const hasStrongRAGMatch = ragResults.some(r => r.score >= MIN_RAG_SCORE)
-
-    if (ragResults.length > 0 && hasStrongRAGMatch) {
-      // Cập nhật Topic hiện tại lên RAM Hot Memory CHỈ KHI RAG match đủ mạnh.
-      const topMatch = ragResults[0]
-      if (topMatch.question) {
-        hotMemory.setCurrentTopic(topMatch.question)
-      }
-
-      // Trích xuất các tri thức tìm được từ DB
-      const dbRagText = ragResults
-        .map((r) => {
-          if (r.type === 'cv' && r.text) return `CV: ${r.text}`
-          if (r.question && r.answer) return `Q: ${r.question}\nA: ${r.answer}`
-          return r.text ?? ''
-        })
-        .filter(Boolean)
-        .join('\n\n')
-      
-      // Kết hợp tri thức DB + Tóm tắt CV/JD từ RAM Hot Memory thành Prompt RAG siêu mạnh
-      const ramContext = hotMemory.getCompactContextMarkdown()
-      const combinedRagContext = [ramContext, dbRagText].filter(Boolean).join('\n\n')
-
-      prompt = buildRAGPrompt(context, transcript, combinedRagContext, recentHistory)
-    } else {
-      // RAG miss hoặc không có kết quả tin cậy: không chặn nữa!
-      // Gửi thẳng sang cho LLM tự do phản hồi tự nhiên dựa trên context và history
-      console.log(`[RAG] Miss/Weak match (top score: ${ragResults[0]?.score?.toFixed(3) ?? 'none'}) → falling back to conversational LLM`)
-      const ramContext = hotMemory.getCompactContextMarkdown()
-      const combinedContext = [context, ramContext].filter(Boolean).join('\n\n')
-      prompt = buildPrompt(combinedContext, transcript, recentHistory)
-    }
+  // Build messages array: system(CV+rules) → history(user/assistant pairs) → current question
+  const candidateSummary = hotMemory.getCandidateSummary()
+  let combinedContext: string
+  if (candidateSummary && context.includes(candidateSummary.slice(0, 100))) {
+    combinedContext = candidateSummary
   } else {
-    // LocalStore bị disable hoặc bị lỗi, dùng Prompt thường kết hợp RAM Hot Memory
-    const ramContext = hotMemory.getCompactContextMarkdown()
-    const combinedContext = [context, ramContext].filter(Boolean).join('\n\n')
-    prompt = buildPrompt(combinedContext, transcript, recentHistory)
+    combinedContext = [context, candidateSummary].filter(Boolean).join('\n\n')
   }
+  const messages = buildMessages(combinedContext, transcript, recentHistory)
 
   let groqStream
   try {
     groqStream = await groq.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
+      messages,
       model: GROQ_MODEL,
       temperature: 0.6,
       max_tokens: 300,
       stream: true,
     })
   } catch (err) {
-    console.error('Groq API error:', err)
-    return c.json({ error: 'AI service temporarily unavailable. Please try again.' }, 503)
+    console.error('Groq error:', err)
+    return c.json({ error: 'AI service unavailable' }, 503)
   }
 
-  // Buffer full answer so we can persist to history after streaming
   let fullAnswer = ''
   const turnId = `turn-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 
@@ -314,10 +244,10 @@ completionRouter.post('/', async (c) => {
       }
     }
 
-    // Persist turn to JSONL history (crash-safe append)
+    // Persist turn to JSONL history
     if (sessionId) {
       try {
-        appendTurn(sessionId, context, {
+        appendTurn(sessionId, context.substring(0, 200), {
           id: turnId,
           question: transcript,
           answer: fullAnswer,
@@ -329,5 +259,3 @@ completionRouter.post('/', async (c) => {
     }
   })
 })
-
-
