@@ -1,12 +1,12 @@
 interface HotMemoryState {
   candidateSummary: string
-  activeInterviewState: string
+  sessionSummary: string
 }
 
 class HotMemoryManager {
   private state: HotMemoryState = {
     candidateSummary: '',
-    activeInterviewState: '',
+    sessionSummary: '',
   }
 
   setCandidateSummary(summary: string): void {
@@ -17,8 +17,12 @@ class HotMemoryManager {
     return this.state.candidateSummary
   }
 
-  setActiveInterviewState(state: string): void {
-    this.state.activeInterviewState = state.trim()
+  setSessionSummary(summary: string): void {
+    this.state.sessionSummary = summary.trim()
+  }
+
+  getSessionSummary(): string {
+    return this.state.sessionSummary
   }
 }
 

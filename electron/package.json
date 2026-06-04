@@ -23,8 +23,16 @@
           "target": "nsis",
           "arch": ["x64"]
         }
+      ]
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
       ],
-      "icon": "icon.ico"
+      "category": "public.app-category.developer-tools"
     },
     "nsis": {
       "oneClick": true,
@@ -35,8 +43,7 @@
     },
     "files": [
       "main.js",
-      "preload.js",
-      "icon.ico"
+      "preload.js"
     ],
     "extraResources": [
       {

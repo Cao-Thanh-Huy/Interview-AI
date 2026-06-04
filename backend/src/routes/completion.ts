@@ -1,7 +1,6 @@
 import { Hono } from 'hono'
 import { streamText } from 'hono/streaming'
 import groq, { GROQ_MODEL } from '../lib/groq.js'
-import type { HistoryTurn } from '../lib/prompts.js'
 import { getClarificationResponse } from '../lib/queryUtils.js'
 import { hotMemory } from '../lib/hotMemory.js'
 import { appendTurn } from '../lib/historyStore.js'
@@ -9,38 +8,75 @@ import { correctASRTranscript, getASRCorrections } from '../lib/asrCorrection.js
 
 export const completionRouter = new Hono()
 
-/** Build messages array: system (rules + CV) → history (user/assistant) → current question */
+/** Build messages: system (rules + CV + session summary) → current question */
 function buildMessages(
   combinedContext: string,
+  sessionSummary: string,
   transcript: string,
-  history: HistoryTurn[],
 ): any[] {
+  const sessionBlock = sessionSummary
+    ? `[CONVERSATION SO FAR]\n${sessionSummary}`
+    : ''
+
   const systemContent = `You are a job candidate. Basic English. Short sentences.
 
 Rules:
 - Answer from your background only. Do not invent technologies, projects, or experience.
 - If information is missing, say "I don't have experience with that".
 - Maintain conversational continuity. When the interviewer asks a follow-up question, continue discussing the subject of your immediately previous answer.
-- Do not introduce a new project, company, technology, or experience unless asked.
 
-${combinedContext ? `Background:\n${combinedContext}` : ''}`
-
-  const historyMessages = history.flatMap((t) => [
-    { role: 'user' as const, content: t.question },
-    { role: 'assistant' as const, content: t.answer },
-  ])
-
-  // Inject previous answer for follow-up context
-  const lastTurn = history.length > 0 ? history[history.length - 1] : null
-  const contextualizedQuestion = lastTurn
-    ? `Previous answer: ${lastTurn.answer}\n\nFollow-up question: ${transcript}`
-    : transcript
+${combinedContext ? `[YOUR BACKGROUND]\n${combinedContext}` : ''}
+${sessionBlock}`
 
   return [
     { role: 'system' as const, content: systemContent.trim() },
-    ...historyMessages,
-    { role: 'user' as const, content: contextualizedQuestion },
+    { role: 'user' as const, content: transcript },
   ]
+}
+
+/** Merge new Q&A vào session summary (dùng 8b cho nhanh) */
+async function updateSessionSummary(question: string, answer: string): Promise<string> {
+  const oldSummary = hotMemory.getSessionSummary()
+  const prompt = `Update this conversation summary with the new exchange.
+Always indicate what the most recent question was about.
+
+Current summary: ${oldSummary || '(empty)'}
+
+New exchange:
+Q: ${question}
+A: ${answer}
+
+Updated summary (keep concise):`
+
+  try {
+    const response = await groq.chat.completions.create({
+      messages: [{ role: 'user', content: prompt }],
+      model: GROQ_MODEL, // 8b — nhanh, rẻ
+      temperature: 0.3,
+      max_tokens: 500,
+    })
+    const merged = response.choices[0]?.message?.content?.trim() || oldSummary
+
+    // Auto-compress nếu quá dài (> 3000 ký tự)
+    if (merged.length > 3000) {
+      const compressPrompt = `Conversation summary:\n${merged}\n\nCondense slightly. Keep most details. Reduce redundancy. Keep recent context clear. Target around 2000-2500 characters.`
+      const compressed = await groq.chat.completions.create({
+        messages: [{ role: 'user', content: compressPrompt }],
+        model: GROQ_MODEL,
+        temperature: 0.3,
+        max_tokens: 500,
+      })
+      const result = compressed.choices[0]?.message?.content?.trim() || merged
+      hotMemory.setSessionSummary(result)
+      return result
+    }
+
+    hotMemory.setSessionSummary(merged)
+    return merged
+  } catch (err) {
+    console.warn('Session summary update failed:', err)
+    return oldSummary
+  }
 }
 
 completionRouter.post('/translate', async (c) => {
@@ -73,8 +109,6 @@ completionRouter.post('/translate', async (c) => {
   }
 })
 
-const CONTEXT_WINDOW_TURNS = 5 // gửi 5 câu hỏi gần nhất
-
 completionRouter.post('/', async (c) => {
   let body
   try {
@@ -86,7 +120,7 @@ completionRouter.post('/', async (c) => {
   const rawTranscript = typeof body.transcript === 'string'
     ? body.transcript
     : String(body.transcript ?? '')
-  const { context = '', sessionId, history = [], mode = 'copilot' } = body
+  const { context = '', sessionId, mode = 'copilot' } = body
 
   if (!rawTranscript.trim()) {
     return c.json({ error: 'transcript is required' }, 400)
@@ -185,7 +219,6 @@ Only output the score block above — no intro, no commentary.`
   }
 
   // ---- Live Interview (copilot) mode ----
-  const recentHistory = history.slice(-CONTEXT_WINDOW_TURNS)
 
   // Transcript quá ngắn → clarification
   if (transcript.trim().length < 3) {
@@ -195,21 +228,16 @@ Only output the score block above — no intro, no commentary.`
     })
   }
 
-  // Cập nhật conversation state vào hotMemory
-  if (recentHistory.length > 0) {
-    const historyText = recentHistory.map((t) => `Q: ${t.question}\nA: ${t.answer}`).join('\n')
-    hotMemory.setActiveInterviewState(historyText)
-  }
-
-  // Build messages array: system(CV+rules) → history(user/assistant pairs) → current question
+  // Build messages với CV context + session summary
   const candidateSummary = hotMemory.getCandidateSummary()
+  const sessionSummary = hotMemory.getSessionSummary()
   let combinedContext: string
   if (candidateSummary && context.includes(candidateSummary.slice(0, 100))) {
     combinedContext = candidateSummary
   } else {
     combinedContext = [context, candidateSummary].filter(Boolean).join('\n\n')
   }
-  const messages = buildMessages(combinedContext, transcript, recentHistory)
+  const messages = buildMessages(combinedContext, sessionSummary, transcript)
 
   let groqStream
   try {
@@ -249,6 +277,13 @@ Only output the score block above — no intro, no commentary.`
       } catch (err) {
         console.error('historyStore appendTurn failed:', err)
       }
+    }
+
+    // Update session summary (fire & forget — không block response)
+    if (fullAnswer) {
+      updateSessionSummary(transcript, fullAnswer).catch((err) =>
+        console.error('Session summary error:', err)
+      )
     }
   })
 })
