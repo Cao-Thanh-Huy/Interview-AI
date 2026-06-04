@@ -14,7 +14,7 @@ export type AudioSource = 'system' | 'microphone' | null
 
 export type AppPhase = 'setup' | 'interview'
 
-export type CompletionMode = 'copilot' | 'training' | 'interviewer'
+export type CompletionMode = 'copilot' | 'interviewer'
 
 export interface HistoryTurn {
   question: string

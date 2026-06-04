@@ -3,7 +3,6 @@ import { Mic } from 'lucide-react'
 import { useInterviewStore } from '@/store/useInterviewStore'
 import { Sidebar, type SidebarTab } from '@/components/layout/Sidebar'
 import { ProfilePanel } from './ProfilePanel'
-import { TrainingPanel } from './TrainingPanel'
 import { HistoryReviewPanel } from './HistoryReviewPanel'
 import { MockInterviewPanel } from './MockInterviewPanel'
 import { SettingsModal } from '@/components/activation/SettingsModal'
@@ -240,7 +239,6 @@ function SetupTab({ onStart, isStarting }: { onStart: () => void; isStarting: bo
 const TAB_LABELS: Record<SidebarTab, string> = {
   setup:    'SESSION',
   profile:  'PROFILE',
-  training: 'TRAINING',
   history:  'HISTORY',
   mock:     'MOCK INTERVIEW',
 }
@@ -309,7 +307,6 @@ export function SetupScreen() {
         >
           {activeTab === 'setup'    && <SetupTab onStart={handleStart} isStarting={isStarting} />}
           {activeTab === 'profile'  && <ProfilePanel />}
-          {activeTab === 'training' && <TrainingPanel />}
           {activeTab === 'history'  && <HistoryReviewPanel />}
           {activeTab === 'mock'     && <MockInterviewPanel />}
         </div>

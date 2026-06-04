@@ -134,45 +134,6 @@ completionRouter.post('/', async (c) => {
     fixes.forEach(f => console.log(`  [ASR] "${f.from}" → "${f.to}"`))
   }
 
-  // ---- Training mode: generate draft answer ----
-  if (mode === 'training') {
-    const candidateSummary = hotMemory.getCandidateSummary()
-    const combinedContext = (candidateSummary && context.includes(candidateSummary.slice(0, 100)))
-      ? candidateSummary
-      : [context, candidateSummary].filter(Boolean).join('\n\n')
-
-    const prompt = `You are a job candidate with basic English.
-
-Rules:
-1. Use "I". Talk about your experience from your background.
-2. Short simple sentences. Basic words.
-3. NO definitions, NO textbook language.
-4. If background no info, say "I don't have that".
-
-${combinedContext ? `Your background:\n${combinedContext}\n\n` : ''}Practice question: "${transcript}"
-
-Draft answer:`
-    let groqStream
-    try {
-      groqStream = await groq.chat.completions.create({
-        messages: [{ role: 'user', content: prompt }],
-        model: GROQ_MODEL,
-        temperature: 0.7,
-        max_tokens: 400,
-        stream: true,
-      })
-    } catch (err) {
-      console.error('Groq error (training):', err)
-      return c.json({ error: 'AI service unavailable' }, 503)
-    }
-    return streamText(c, async (stream) => {
-      for await (const chunk of groqStream) {
-        const content = chunk.choices[0]?.delta?.content
-        if (content) await stream.write(content)
-      }
-    })
-  }
-
   // ---- Mock Interview: Score the user's spoken answer ----
   if (mode === 'mock-scoring') {
     const { suggestion = '', userAnswer = '' } = body
