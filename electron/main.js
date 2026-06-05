@@ -60,10 +60,8 @@ const PROD_DIST     = path.join(ROOT, 'frontend-dist', 'index.html')
 
 // Backend (production only — dev uses start.ps1)
 const isWin = process.platform === 'win32'
-const PROD_NODE     = (() => {
-  const p = path.join(ROOT, 'runtime', isWin ? 'node.exe' : 'node')
-  return require('fs').existsSync(p) ? p : process.execPath  // fallback to Electron's Node
-})()
+const NODE_FALLBACK = path.join(ROOT, 'runtime', isWin ? 'node.exe' : 'node')
+const PROD_NODE     = require('fs').existsSync(NODE_FALLBACK) ? NODE_FALLBACK : 'node'
 const PROD_BACKEND  = path.join(ROOT, 'app', 'index.js')
 
 let backendProcess    = null
@@ -98,9 +96,14 @@ async function waitForPort(port, maxMs = 15000, interval = 500) {
 
 // ─── Backend (production only) ────────────────────────────────────────────────
 function startProdBackend() {
-  if (!fs.existsSync(PROD_NODE) || !fs.existsSync(PROD_BACKEND)) return
-  console.log('[Electron] Starting backend:', PROD_BACKEND)
-  backendProcess = spawn(PROD_NODE, ['--use-system-ca', PROD_BACKEND], {
+  const nodePath = PROD_NODE
+  const backendPath = PROD_BACKEND
+  if (!fs.existsSync(nodePath) || !fs.existsSync(backendPath)) {
+    console.log('[Electron] Backend files not found, skipping:', { node: nodePath, backend: backendPath })
+    return
+  }
+  console.log('[Electron] Starting backend:', backendPath)
+  backendProcess = spawn(nodePath, ['--use-system-ca', backendPath], {
     cwd: path.join(ROOT, 'app'),
     stdio: 'pipe',
     windowsHide: true,
@@ -111,6 +114,7 @@ function startProdBackend() {
 
 // ─── Create Window ─────────────────────────────────────────────────────────────
 async function createWindow() {
+  const isMac = process.platform === 'darwin'
   mainWindow = new BrowserWindow({
     width: 950,
     height: 640,
@@ -118,12 +122,10 @@ async function createWindow() {
     minHeight: 520,
     title: 'IntelliView',
     frame: false,
-    titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      color: '#0c0c14',
-      symbolColor: '#475569',
-      height: 36,
-    },
+    titleBarStyle: isMac ? 'hiddenInset' : 'hidden',
+    ...(isMac ? {} : {
+      titleBarOverlay: { color: '#0c0c14', symbolColor: '#475569', height: 36 },
+    }),
     backgroundColor: '#0c0c14',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -386,6 +388,7 @@ ipcMain.on('overlay:drag-end', () => {
 
 // ─── IPC Handlers ──────────────────────────────────────────────────────────────
 ipcMain.on('win:minimize',   () => mainWindow?.minimize())
+ipcMain.on('win:close',      () => mainWindow?.close())
 ipcMain.on('win:toggle-aot', () => {
   if (!mainWindow) return
   const next = !mainWindow.isAlwaysOnTop()

@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('electronClipboard', {
 // Window control IPC — exposed to renderer safely
 contextBridge.exposeInMainWorld('electronWindow', {
   minimize:          ()  => ipcRenderer.send('win:minimize'),
+  close:             ()  => ipcRenderer.send('win:close'),
   toggleAlwaysOnTop: ()  => ipcRenderer.send('win:toggle-aot'),
   setOpacity:        (v) => ipcRenderer.send('win:opacity', v),
   getAlwaysOnTop:    ()  => ipcRenderer.invoke('win:get-aot'),

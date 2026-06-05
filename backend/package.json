@@ -11,11 +11,13 @@
     "seed:cv": "tsx src/scripts/seed-cv-kb.ts",
     "build:prod": "node esbuild-prod.mjs",
     "build:obfuscate": "javascript-obfuscator dist-pkg/index.js --output dist-pkg/index.js --compact true --string-array true --string-array-encoding base64 --rename-globals false",
-    "build:pkg": "npx @yao-pkg/pkg dist-pkg/index.js --targets node20-win-x64 --output ../Release_Package/InterviewAI_Backend.exe --config package.json",
+    "build:pkg": "npx @yao-pkg/pkg dist-pkg/index.js --targets node20-win-x64,node20-mac-x64 --output ../Release_Package/InterviewAI_Backend --config package.json",
+    "build:pkg:win": "npx @yao-pkg/pkg dist-pkg/index.js --targets node20-win-x64 --output ../Release_Package/InterviewAI_Backend.exe --config package.json",
+    "build:pkg:mac": "npx @yao-pkg/pkg dist-pkg/index.js --targets node20-mac-x64 --output ../Release_Package/InterviewAI_Backend_mac --config package.json",
     "build:all": "npm run build:prod && npm run build:obfuscate && npm run build:pkg"
   },
   "pkg": {
-    "targets": ["node20-win-x64"],
+    "targets": ["node20-win-x64", "node20-mac-x64"],
     "assets": [
       "dist-pkg/frontend-dist/**/*",
       "node_modules/@xenova/transformers/src/**/*",
