@@ -1,11 +1,13 @@
 import { useState, useCallback, useEffect, useRef, CSSProperties } from 'react'
 import { useDeepgram } from '@/hooks/useDeepgram'
-import { streamCompletion, translateText } from '@/lib/api'
+import { streamCompletion, translateText, practiceTurn, getLastTranslateModel } from '@/lib/api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface SessionData {
   context: string
   sessionId: string
+  mode?: 'live' | 'practice'
+  prompt?: string
 }
 
 interface Turn {
@@ -133,6 +135,15 @@ export function OverlayApp() {
   const [sessionData, setSessionData] = useState<SessionData | null>(null)
   const [isActive, setIsActive]     = useState(false) // whether session is running
 
+  // Practice mode
+  const [mode, setMode]             = useState<'live' | 'practice'>('live')
+  const [practicePrompt, setPracticePrompt] = useState('')
+  const [practiceStarted, setPracticeStarted] = useState(false)
+  const [practiceError, setPracticeError]     = useState('')
+  const [practiceContext, setPracticeContext]   = useState('')
+  const [practiceSessionId, setPracticeSessionId] = useState('')
+  const [activeModels, setActiveModels] = useState({ question: '70B', summary: '70B', translate: '70B' })
+
   // Font size — +/- buttons in bar, persist to localStorage
   const [fontSize, setFontSize] = useState(() => {
     const v = Number(localStorage.getItem('hub-font'))
@@ -187,7 +198,10 @@ export function OverlayApp() {
     setTurns(prev => [...prev, { id, question, bullets: [], isGenerating: true }].slice(-10))
     // Translate question in background
     translateText(question)
-      .then((vn) => setTurns(prev => prev.map(t => t.id === id ? { ...t, questionTranslation: vn } : t)))
+      .then((vn) => {
+        setActiveModels(prev => ({ ...prev, translate: getLastTranslateModel() }))
+        setTurns(prev => prev.map(t => t.id === id ? { ...t, questionTranslation: vn } : t))
+      })
       .catch(() => {})
     return id
   }, [])
@@ -265,6 +279,75 @@ export function OverlayApp() {
     }
   }, [sessionData, addTurn, appendBullet, finalizeTurn])
 
+  // ── Practice turn — AI tự hỏi + gợi ý ──────────────────────────────────────
+  const handlePracticeTurn = useCallback(async (action: 'start' | 'next') => {
+    if (!practicePrompt) return
+
+    abortRef.current?.abort()
+    abortRef.current = new AbortController()
+
+    // Placeholder turn: empty question, show spinner
+    const id = Date.now().toString()
+    activeTurnId.current = id
+    setPracticeError('')
+    setTurns(prev => [...prev, { id, question: '', bullets: [], isGenerating: true }].slice(-10))
+
+    try {
+      const result = await practiceTurn(practicePrompt, action, practiceContext, practiceSessionId)
+
+      // Update active models
+      if (result.questionModel || result.suggestionModel) {
+        setActiveModels(prev => ({
+          ...prev,
+          question: result.questionModel || prev.question,
+          summary: result.suggestionModel || prev.summary,
+        }))
+      }
+
+      // Set question
+      setTurns(prev => prev.map(t => t.id === id ? { ...t, question: result.question } : t))
+
+      // Auto-translate question
+      translateText(result.question)
+        .then((vn) => {
+          setActiveModels(prev => ({ ...prev, translate: getLastTranslateModel() }))
+          setTurns(prev => prev.map(t => t.id === id ? { ...t, questionTranslation: vn } : t))
+        })
+        .catch(() => {})
+
+      // Parse suggestion into bullets
+      if (result.suggestion) {
+        const lines = result.suggestion
+          .split('\n')
+          .map(l => l.trim().replace(/^[-*•]\s*/, '').replace(/\*\*(.*?)\*\*/g, '$1'))
+          .filter(Boolean)
+
+        lines.forEach(b => appendBullet(id, b))
+
+        // Translate suggestion in background
+        translateText(result.suggestion)
+          .then((vn) => {
+            const vnLines = vn.split('\n')
+              .map(l => l.trim().replace(/^[-*•]\s*/, '').replace(/^\d+\.\s*/, ''))
+              .filter(Boolean)
+            setTurns(prev => prev.map(t => t.id === id ? { ...t, bulletTranslation: vnLines } : t))
+          })
+          .catch(() => {})
+      }
+
+      finalizeTurn(id)
+    } catch (err) {
+      console.error('[Practice] Error:', err)
+      // Show error trong turn thay vì turn rỗng
+      setTurns(prev => prev.map(t => t.id === id ? {
+        ...t,
+        question: '⚠️ Connection failed. Please try again.',
+        isGenerating: false,
+      } : t))
+      setPracticeError(err instanceof Error ? err.message : 'Failed to get response')
+    }
+  }, [practicePrompt, practiceContext, practiceSessionId, appendBullet])
+
   // ── Deepgram ───────────────────────────────────────────────────────────────
   const { start, stop, status, audioLevel } = useDeepgram({
     onTranscript:   handleTranscript,
@@ -276,9 +359,19 @@ export function OverlayApp() {
   // ── IPC: session init ──────────────────────────────────────────────────────
   useEffect(() => {
     if (window.electronOverlay) {
-      const cleanup = window.electronOverlay.onInit((data) => {
+      const cleanup = window.electronOverlay.onInit((data: SessionData) => {
         setSessionData(data)
         setIsActive(true)
+        if (data.mode === 'practice') {
+          setMode('practice')
+          setPracticePrompt(data.prompt || '')
+          setPracticeContext(data.context || '')
+          setPracticeSessionId(data.sessionId || '')
+          setTurns([])  // Reset turns for new practice session
+          setPracticeStarted(false)
+        } else {
+          setMode('live')
+        }
       })
       return cleanup
     } else {
@@ -290,9 +383,34 @@ export function OverlayApp() {
 
   useEffect(() => {
     if (!sessionData) return
+    if (mode === 'practice') return  // Practice uses its own turn trigger
     start()
     return () => stop()
-  }, [sessionData]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessionData, mode]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Practice: trigger first turn once ──────────────────────────────────────
+  useEffect(() => {
+    if (mode === 'practice' && isActive && !practiceStarted && practicePrompt) {
+      setPracticeStarted(true)
+      handlePracticeTurn('start')
+    }
+  }, [mode, isActive, practiceStarted, practicePrompt, handlePracticeTurn])
+
+  // ── Keyboard shortcut: Space → Next (practice mode) ──────────────────────
+  useEffect(() => {
+    if (mode !== 'practice') return
+    if (turns.length === 0) return
+    const isGenerating = turns[turns.length - 1].isGenerating
+
+    const handler = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && !isGenerating) {
+        e.preventDefault()
+        handlePracticeTurn('next')
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [mode, turns, handlePracticeTurn])
 
   // ── Sync Electron window width with stored hubWidth on session start ────
   // Prevents desync where window is created at 440px but hubWidth (from
@@ -319,7 +437,16 @@ export function OverlayApp() {
     abortRef.current?.abort()
     stop()
     window.electronOverlay?.stop()
-  }, [stop])
+    if (mode === 'practice') {
+      setPracticeStarted(false)
+      setMode('live')
+      setSessionData(null)  // Prevent Deepgram start on hidden overlay
+      setTurns([])
+      setPracticeError('')
+      setPracticeContext('')
+      setPracticeSessionId('')
+    }
+  }, [stop, mode])
 
   // ── Font size buttons ──────────────────────────────────────────────────────
   const changeFont = useCallback((delta: number) => {
@@ -348,51 +475,42 @@ export function OverlayApp() {
     })
   }, [])
 
-  // ── Resize handle (right edge — width) ───────────────────────────────────
-  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+  // ── Resize: Pointer Events + setPointerCapture ─────────────────────────────
+  const handleResizePointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault()
-    e.stopPropagation()
-    window.electronOverlay?.setInteractive(true)
+    const el = e.currentTarget as HTMLElement
+    const wrapper = el.closest('.overlay-wrapper') as HTMLElement
+    const container = wrapper?.querySelector('.overlay-container') as HTMLElement
+    if (!wrapper || !container) return
 
-    const startX = e.clientX
-    const startW = hubWidthRef.current
+    el.setPointerCapture(e.pointerId)
+    container.style.transition = 'none'
 
-    const onMove = (mv: MouseEvent) => {
+    const startX = e.clientX, startY = e.clientY
+    const startW = wrapper.offsetWidth, startH = container.offsetHeight
+
+    const onMove = (mv: PointerEvent) => {
       const newW = Math.min(720, Math.max(260, startW + (mv.clientX - startX)))
-      setHubWidth(newW)
+      const newH = Math.min(550, Math.max(120, startH + (mv.clientY - startY)))
+      wrapper.style.width = `${newW}px`
+      container.style.maxHeight = `${newH}px`
       hubWidthRef.current = newW
+      hubHeightRef.current = newH
       window.electronOverlay?.resizeWidth(newW)
     }
     const onUp = () => {
+      el.releasePointerCapture(e.pointerId)
+      container.style.transition = ''
+      setHubWidth(hubWidthRef.current)
+      setHubHeight(hubHeightRef.current)
       localStorage.setItem('hub-width', String(hubWidthRef.current))
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup', onUp)
-    }
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup', onUp)
-  }, [])
-
-  // ── Resize handle (bottom edge — height) ───────────────────────────────────
-  const handleBottomResizeMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    window.electronOverlay?.setInteractive(true)
-
-    const startY = e.clientY
-    const startH = hubHeightRef.current
-
-    const onMove = (mv: MouseEvent) => {
-      const newH = Math.min(550, Math.max(120, startH + (mv.clientY - startY)))
-      setHubHeight(newH)
-      hubHeightRef.current = newH
-    }
-    const onUp = () => {
       localStorage.setItem('hub-height', String(hubHeightRef.current))
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup', onUp)
+      window.electronOverlay?.resizeWidth(hubWidthRef.current)
+      el.removeEventListener('pointermove', onMove)
+      el.removeEventListener('pointerup', onUp)
     }
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup', onUp)
+    el.addEventListener('pointermove', onMove)
+    el.addEventListener('pointerup', onUp)
   }, [])
 
   // ── Drag handle (top bar) ──────────────────────────────────────────────────
@@ -409,14 +527,13 @@ export function OverlayApp() {
 
   if (!isActive) return null
 
-  const hasContent = turns.length > 0 || interimText
+  const hasContent = turns.length > 0 || (mode === 'live' && !!interimText)
+  const latestTurnIsGenerating = turns.length > 0 && turns[turns.length - 1].isGenerating
 
   return (
     <div
       className={`overlay-wrapper${hubTheme === 'light' ? ' hub-theme--light' : ''}`}
-      style={{
-        width: hubWidth,
-      }}
+      style={{ width: hubWidth }}
       onMouseEnter={() => window.electronOverlay?.setInteractive(true)}
       onMouseLeave={() => window.electronOverlay?.setInteractive(false)}
     >
@@ -436,13 +553,22 @@ export function OverlayApp() {
           </div>
 
           {/* Status indicator */}
-          <div className="drag-bar__status">
-            <span className={`status-dot ${status === 'connected' ? 'live' : 'dim'}`} />
-            {status === 'connected' && <AudioBars level={audioLevel} />}
-            <span className="drag-bar__label">
-              {status === 'connected' ? 'Live' : 'Connecting…'}
-            </span>
-          </div>
+          {mode === 'practice' ? (
+            <div className="drag-bar__status">
+              <span className="status-dot live" />
+              <span className="drag-bar__label">
+                {latestTurnIsGenerating ? 'Thinking…' : 'Practice'}
+              </span>
+            </div>
+          ) : (
+            <div className="drag-bar__status">
+              <span className={`status-dot ${status === 'connected' ? 'live' : 'dim'}`} />
+              {status === 'connected' && <AudioBars level={audioLevel} />}
+              <span className="drag-bar__label">
+                {status === 'connected' ? 'Live' : 'Connecting…'}
+              </span>
+            </div>
+          )}
 
           {/* Right controls: A− A+ | ◑− ◑+ | ☀/☾ | Stop */}
           <div className="drag-bar__actions">
@@ -456,8 +582,43 @@ export function OverlayApp() {
               {hubTheme === 'dark' ? '☀' : '☾'}
             </button>
             <div className="action-sep" />
+            {mode === 'practice' && (
+              <button
+                onClick={() => handlePracticeTurn('next')}
+                disabled={latestTurnIsGenerating}
+                style={{
+                  padding: '4px 12px', borderRadius: 6,
+                  background: latestTurnIsGenerating ? 'transparent' : 'rgba(99,102,241,0.2)',
+                  color: latestTurnIsGenerating ? 'rgba(100,115,150,0.45)' : '#a5b4fc',
+                  border: latestTurnIsGenerating ? 'none' : '1px solid rgba(99,102,241,0.3)',
+                  fontSize: 11, fontWeight: 600, cursor: latestTurnIsGenerating ? 'default' : 'pointer',
+                  whiteSpace: 'nowrap', lineHeight: '20px',
+                  transition: 'background 140ms',
+                  fontFamily: 'inherit',
+                }}
+                title="Next question (Space)"
+              >
+                {latestTurnIsGenerating ? '…' : 'Next →'}
+              </button>
+            )}
+            <div className="action-sep" />
             <button className="icon-btn icon-btn--lg stop" onClick={handleStop} title="Stop session">■</button>
           </div>
+        </div>
+
+        {/* ── Model status row ──────────────────────────────────────────────── */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '3px 12px', flexShrink: 0,
+          borderBottom: '1px solid rgba(255,255,255,0.04)',
+          fontSize: 9, color: 'rgba(140,155,190,0.4)',
+        }}>
+          <span style={{ color: '#22c55e' }}>●</span>
+          <span>{activeModels.question}</span>
+          <span style={{ color: '#eab308' }}>●</span>
+          <span>{activeModels.summary}</span>
+          <span style={{ color: '#ef4444' }}>●</span>
+          <span>{activeModels.translate}</span>
         </div>
 
         {/* ── Scrollable turn feed ───────────────────────────────────────────── */}
@@ -473,8 +634,19 @@ export function OverlayApp() {
               />
             ))}
 
-            {/* Live interim caption (speech being spoken right now) */}
-            {interimText && (
+            {/* Practice error */}
+            {mode === 'practice' && practiceError && (
+              <div style={{
+                padding: '8px 12px', margin: '6px 0', borderRadius: 6,
+                background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)',
+                color: '#f87171', fontSize: 11, lineHeight: 1.5,
+              }}>
+                ⚠️ {practiceError}
+              </div>
+            )}
+
+            {/* Live interim caption — only in live mode */}
+            {mode === 'live' && interimText && (
               <div className="hub-interim">
                 <span className="hub-interim__cursor" />
                 {interimText}
@@ -483,24 +655,17 @@ export function OverlayApp() {
           </div>
         )}
 
-        {/* ── Empty state: waiting for speech ───────────────────────────────── */}
+        {/* ── Empty state ──────────────────────────────────────────────────── */}
         {!hasContent && (
           <div className="hub-empty">
-            {status === 'connected' ? 'Listening…' : 'Connecting…'}
+            {mode === 'practice' ? 'Preparing your first question...' : (status === 'connected' ? 'Listening…' : 'Connecting…')}
           </div>
         )}
 
-        {/* ── Bottom resize handle — drag up/down to resize height ───────────── */}
-        <div className="resize-handle-bottom" onMouseDown={handleBottomResizeMouseDown}>
-          <div className="resize-grip-h" />
-        </div>
       </div>
 
-      {/* ── Resize handle — right edge, 14px wide — OUTSIDE overlay-container so
-             it is not clipped by overflow: hidden ──────────────────────────── */}
-      <div className="resize-handle" onMouseDown={handleResizeMouseDown}>
-        <div className="resize-grip" />
-      </div>
+      {/* ── Resize handle bottom-right ─────────────────────────────────────── */}
+      <div className="resize-handle" onPointerDown={handleResizePointerDown} />
     </div>
   )
 }

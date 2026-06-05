@@ -143,8 +143,11 @@ export function HistoryReviewPanel() {
                     onMouseLeave={e => { if (selectedId !== session.sessionId) (e.currentTarget as HTMLButtonElement).style.background = 'transparent' }}
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: 13, color: 'var(--text)', fontWeight: 500 }}>
+                      <p style={{ fontSize: 13, color: 'var(--text)', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
                         {formatDate(session.startedAt)}
+                        {session.type === 'practice' && (
+                          <span style={{ fontSize: 9, color: '#eab308', border: '1px solid rgba(234,179,8,0.3)', borderRadius: 3, padding: '1px 5px', fontWeight: 600, letterSpacing: '0.05em' }}>PRACTICE</span>
+                        )}
                       </p>
                       {session.firstQuestion && (
                         <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

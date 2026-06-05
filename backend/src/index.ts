@@ -11,6 +11,7 @@ import { historyRouter } from './routes/history.js'
 import { licenseRouter } from './routes/license.js'
 import { settingsRouter } from './routes/settings.js'
 import { debugRouter } from './routes/debug.js'
+import { practiceRouter } from './routes/practice.js'
 import { licenseGuard, getLicenseStatus } from './middleware/licenseGuard.js'
 import { getHWID } from './lib/license.js'
 import { existsSync } from 'node:fs'
@@ -46,6 +47,7 @@ app.route('/api/deepgram', deepgramRouter)
 app.route('/api/cv', cvRouter)
 app.route('/api/history', historyRouter)
 app.route('/api/settings', settingsRouter)   // public — không cần license
+app.route('/api/practice', practiceRouter)
 
 app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }))
 

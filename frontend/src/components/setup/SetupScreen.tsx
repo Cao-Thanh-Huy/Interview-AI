@@ -4,7 +4,7 @@ import { useInterviewStore } from '@/store/useInterviewStore'
 import { Sidebar, type SidebarTab } from '@/components/layout/Sidebar'
 import { ProfilePanel } from './ProfilePanel'
 import { HistoryReviewPanel } from './HistoryReviewPanel'
-import { MockInterviewPanel } from './MockInterviewPanel'
+import { PracticePanel } from './PracticePanel'
 import { SettingsModal } from '@/components/activation/SettingsModal'
 import { apiUrl } from '@/lib/api'
 
@@ -240,7 +240,7 @@ const TAB_LABELS: Record<SidebarTab, string> = {
   setup:    'SESSION',
   profile:  'PROFILE',
   history:  'HISTORY',
-  mock:     'MOCK INTERVIEW',
+  practice: 'PRACTICE',
 }
 
 // ─── SetupScreen ──────────────────────────────────────────────────────────────
@@ -308,7 +308,8 @@ export function SetupScreen() {
           {activeTab === 'setup'    && <SetupTab onStart={handleStart} isStarting={isStarting} />}
           {activeTab === 'profile'  && <ProfilePanel />}
           {activeTab === 'history'  && <HistoryReviewPanel />}
-          {activeTab === 'mock'     && <MockInterviewPanel />}
+          {activeTab === 'practice' && <PracticePanel />}
+
         </div>
       </div>
 

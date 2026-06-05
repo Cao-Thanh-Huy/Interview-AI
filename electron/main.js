@@ -355,9 +355,9 @@ ipcMain.on('overlay:resize-width', (_, newWidth) => {
   const clamped = Math.min(720, Math.max(260, Math.round(newWidth)))
   const [, h] = overlayWindow.getContentSize()
   overlayWindow.setContentSize(clamped, h)
-  // Persist so createOverlay() on next launch picks up the right size
   writeConfig({ ...readConfig(), hubWidth: clamped })
 })
+
 
 // Native drag via polling — more robust than CSS -webkit-app-region: drag
 // because it survives mouse leaving the window (which would kill setIgnoreMouseEvents)

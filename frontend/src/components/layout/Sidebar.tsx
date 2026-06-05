@@ -1,13 +1,13 @@
 import React from 'react'
 import { Mic, History, Target, UserCircle, Settings } from 'lucide-react'
 
-export type SidebarTab = 'setup' | 'profile' | 'history' | 'mock'
+export type SidebarTab = 'setup' | 'profile' | 'history' | 'practice'
 
 const NAV: { id: SidebarTab; icon: React.ReactNode; label: string }[] = [
   { id: 'setup',    icon: <Mic size={18} />,          label: 'Setup Session' },
   { id: 'profile',  icon: <UserCircle size={18} />,   label: 'My Profile' },
   { id: 'history',  icon: <History size={18} />,      label: 'Interview History' },
-  { id: 'mock',     icon: <Target size={18} />,       label: 'Mock Interview' },
+  { id: 'practice', icon: <Target size={18} />,       label: 'Practice' },
 ]
 
 interface Props {

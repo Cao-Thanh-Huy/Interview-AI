@@ -11,6 +11,7 @@ export interface SessionMetadata {
   startedAt: string
   context: string
   firstQuestion?: string  // first turn question — for UI preview
+  type?: 'live' | 'practice'  // phân biệt loại session
 }
 
 export interface TurnEntry {
@@ -28,7 +29,7 @@ function sessionDir(sessionId: string): string {
  * Creates a new session directory and writes metadata.json.
  * Safe to call multiple times — skips if already exists.
  */
-export function ensureSession(sessionId: string, context: string): void {
+export function ensureSession(sessionId: string, context: string, type?: 'live' | 'practice'): void {
   const dir = sessionDir(sessionId)
   if (fs.existsSync(path.join(dir, 'metadata.json'))) return
   fs.mkdirSync(dir, { recursive: true })
@@ -36,15 +37,13 @@ export function ensureSession(sessionId: string, context: string): void {
     sessionId,
     startedAt: new Date().toISOString(),
     context,
+    type,
   }
   fs.writeFileSync(path.join(dir, 'metadata.json'), JSON.stringify(meta, null, 2), 'utf-8')
 }
 
-/**
- * Appends a single turn to turns.jsonl (append-only, crash-safe).
- */
-export function appendTurn(sessionId: string, context: string, turn: TurnEntry): void {
-  ensureSession(sessionId, context)
+export function appendTurn(sessionId: string, context: string, turn: TurnEntry, type?: 'live' | 'practice'): void {
+  ensureSession(sessionId, context, type)
   const file = path.join(sessionDir(sessionId), 'turns.jsonl')
   fs.appendFileSync(file, JSON.stringify(turn) + '\n', 'utf-8')
 }

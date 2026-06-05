@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { streamText } from 'hono/streaming'
-import groq, { GROQ_MODEL } from '../lib/groq.js'
+import groq, { getGroqClient, GROQ_MODEL, MODELS_PRIORITY, MODELS_SUMMARY, MODELS_TRANSLATE, callWithFallback, stripReasoning } from '../lib/groq.js'
 import { getClarificationResponse } from '../lib/queryUtils.js'
 import { hotMemory } from '../lib/hotMemory.js'
 import { appendTurn } from '../lib/historyStore.js'
@@ -9,7 +9,7 @@ import { correctASRTranscript, getASRCorrections } from '../lib/asrCorrection.js
 export const completionRouter = new Hono()
 
 /** Build messages: system (rules + CV + session summary) → current question */
-function buildMessages(
+export function buildMessages(
   combinedContext: string,
   sessionSummary: string,
   transcript: string,
@@ -18,15 +18,30 @@ function buildMessages(
     ? `[CONVERSATION SO FAR]\n${sessionSummary}`
     : ''
 
-  const systemContent = `You are a job candidate. Basic English. Short sentences.
+  const systemContent = `You are a job candidate. Answer short, direct, no fluff.
 
 Rules:
-- Answer from your background only. Do not invent technologies, projects, or experience.
-- If information is missing, say "I don't have experience with that".
-- Maintain conversational continuity. When the interviewer asks a follow-up question, continue discussing the subject of your immediately previous answer.
+- No numbers. No bullets. No paragraphs.
+- Each sentence on its own line.
+- Each sentence max 12 words.
+- Minimum 3 sentences, maximum 4 sentences.
+- Answer exactly what is asked. Do not explain why you are answering.
+- Use simple words. English is not your first language.
+- If missing info, say "I don't have experience with that".
 
-${combinedContext ? `[YOUR BACKGROUND]\n${combinedContext}` : ''}
-${sessionBlock}`
+Example of GOOD answer:
+We had data migration issues
+Legacy ETL was hard to refactor
+We used incremental loading
+
+Example of BAD answer (too long, has fillers):
+I mean, migrating from legacy platform is complex. There are several challenges...
+
+[BACKGROUND]
+${combinedContext || '(not provided)'}
+
+[HISTORY]
+${sessionSummary || '(empty)'}`
 
   return [
     { role: 'system' as const, content: systemContent.trim() },
@@ -34,10 +49,10 @@ ${sessionBlock}`
   ]
 }
 
-/** Merge new Q&A vào session summary (dùng 8b cho nhanh) */
-async function updateSessionSummary(question: string, answer: string): Promise<string> {
+/** Merge new Q&A vào session summary (dùng model chain rẻ) */
+export async function updateSessionSummary(question: string, answer: string): Promise<string> {
   const oldSummary = hotMemory.getSessionSummary()
-  const prompt = `Update this conversation summary with the new exchange.
+  const prompt = [{ role: 'user' as const, content: `Update this conversation summary with the new exchange.
 Always indicate what the most recent question was about.
 
 Current summary: ${oldSummary || '(empty)'}
@@ -46,27 +61,19 @@ New exchange:
 Q: ${question}
 A: ${answer}
 
-Updated summary (keep concise):`
+Updated summary (keep concise):` }]
 
   try {
-    const response = await groq.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
-      model: GROQ_MODEL, // 8b — nhanh, rẻ
-      temperature: 0.3,
-      max_tokens: 500,
-    })
-    const merged = response.choices[0]?.message?.content?.trim() || oldSummary
+    const r = await callWithFallback(prompt, MODELS_SUMMARY, { temperature: 0.3, max_tokens: 500 })
+    const merged = r.content || oldSummary
 
-    // Auto-compress nếu quá dài (> 3000 ký tự)
     if (merged.length > 3000) {
-      const compressPrompt = `Conversation summary:\n${merged}\n\nCondense slightly. Keep most details. Reduce redundancy. Keep recent context clear. Target around 2000-2500 characters.`
-      const compressed = await groq.chat.completions.create({
-        messages: [{ role: 'user', content: compressPrompt }],
-        model: GROQ_MODEL,
-        temperature: 0.3,
-        max_tokens: 500,
-      })
-      const result = compressed.choices[0]?.message?.content?.trim() || merged
+      const c = await callWithFallback(
+        [{ role: 'user', content: `Condense slightly. Keep most details. Reduce redundancy. Keep recent context clear. Target around 2000-2500 characters.\n\n${merged}` }],
+        MODELS_SUMMARY,
+        { temperature: 0.3, max_tokens: 500 },
+      )
+      const result = c.content || merged
       hotMemory.setSessionSummary(result)
       return result
     }
@@ -79,6 +86,27 @@ Updated summary (keep concise):`
   }
 }
 
+/** Tạo Groq stream với fallback model chain. Trả về { stream, model } */
+async function createStreamWithFallback(
+  messages: any[],
+  opts: { temperature?: number; max_tokens?: number } = {},
+): Promise<{ stream: any; model: string }> {
+  let lastErr: any
+  for (const model of MODELS_PRIORITY) {
+    try {
+      const stream = await getGroqClient().chat.completions.create({
+        messages, model, ...opts, stream: true,
+      })
+      return { stream, model }
+    } catch (err: any) {
+      lastErr = err
+      console.warn(`[Live] ⚠️ ${model} failed: ${(err?.message || err?.status || '').slice(0, 80)} → fallback`)
+      continue
+    }
+  }
+  throw lastErr || new Error('All models exhausted')
+}
+
 completionRouter.post('/translate', async (c) => {
   const { text } = await c.req.json<{ text: string }>()
   if (!text?.trim()) {
@@ -86,25 +114,17 @@ completionRouter.post('/translate', async (c) => {
   }
 
   try {
-    const response = await groq.chat.completions.create({
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a strict, direct translator. Your ONLY job is to translate the input text to natural, conversational Vietnamese. Do NOT answer any question under any circumstances. Do NOT explain. Do NOT add any comments. Just output the direct translation of the input text.'
-        },
-        {
-          role: 'user',
-          content: `Translate the following English text to Vietnamese. Do NOT answer it, just translate the words:\n\n"${text}"`
-        }
+    const r = await callWithFallback(
+      [
+        { role: 'system', content: 'You are a strict, direct translator. Translate to natural conversational Vietnamese. No explanations.' },
+        { role: 'user', content: `Translate to Vietnamese:\n"${text}"` },
       ],
-      model: GROQ_MODEL,
-      temperature: 0.3,
-      max_tokens: 150,
-    })
-    const translatedText = response.choices[0]?.message?.content?.trim() || ''
-    return c.json({ translation: translatedText })
-  } catch (err) {
-    console.error('Translation error:', err)
+      MODELS_TRANSLATE,
+      { temperature: 0.3, max_tokens: 200 },
+    )
+    return c.json({ translation: r.content, model: r.model })
+  } catch (err: any) {
+    console.error('Translation error:', err?.message || err)
     return c.json({ error: 'Translation failed' }, 500)
   }
 })
@@ -200,17 +220,13 @@ Only output the score block above — no intro, no commentary.`
   }
   const messages = buildMessages(combinedContext, sessionSummary, transcript)
 
-  let groqStream
+  let groqStream, liveModel = '70B'
   try {
-    groqStream = await groq.chat.completions.create({
-      messages,
-      model: GROQ_MODEL,
-      temperature: 0.6,
-      max_tokens: 300,
-      stream: true,
-    })
-  } catch (err) {
-    console.error('Groq error:', err)
+    const result = await createStreamWithFallback(messages, { temperature: 0.6, max_tokens: 500 })
+    groqStream = result.stream
+    liveModel = result.model
+  } catch (err: any) {
+    console.error('Groq error:', err?.message || err)
     return c.json({ error: 'AI service unavailable' }, 503)
   }
 
@@ -218,12 +234,23 @@ Only output the score block above — no intro, no commentary.`
   const turnId = `turn-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 
   return streamText(c, async (stream) => {
+    let buf = ''
     for await (const chunk of groqStream) {
-      const content = chunk.choices[0]?.delta?.content
-      if (content) {
-        fullAnswer += content
-        await stream.write(content)
+      const raw = chunk.choices[0]?.delta?.content || ''
+      fullAnswer += raw
+      buf += raw
+      // Strip complete <think> blocks, keep partial at end in buffer
+      let cleaned = buf.replace(/<think>[\s\S]*?<\/think>/g, '')
+      const openIdx = cleaned.lastIndexOf('<think>')
+      const closeIdx = cleaned.lastIndexOf('</think>')
+      if (openIdx > closeIdx) {
+        // Unclosed <think> ở cuối buffer → giữ lại
+        buf = cleaned.slice(openIdx)
+        cleaned = cleaned.slice(0, openIdx)
+      } else {
+        buf = ''
       }
+      if (cleaned) await stream.write(cleaned)
     }
 
     // Persist turn to JSONL history

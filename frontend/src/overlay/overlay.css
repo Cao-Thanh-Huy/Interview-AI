@@ -17,13 +17,36 @@ body {
   background: transparent;
 }
 
-/* ─── Overlay wrapper ─────────────────────────────────────────────────────────
-   Wraps the container and resize handle so the handle sits outside
-   the container's overflow: hidden clip zone. Width is set inline.         */
 .overlay-wrapper {
   position: relative;
-  /* width is set inline via React state (hubWidth) */
 }
+
+/* ─── Resize handle bottom-right ──────────────────────────────────────── */
+.resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  z-index: 25;
+  -webkit-app-region: no-drag;
+  touch-action: none;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  color: rgba(255,255,255,0.2);
+}
+.resize-handle::after {
+  content: '';
+  width: 10px;
+  height: 10px;
+  margin: 0 3px 3px 0;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transition: color 140ms;
+}
+.resize-handle:hover { color: rgba(82,84,204,0.7); }
 
 /* ─── Main container ─────────────────────────────────────────────────────────
    Uses max-height transition so content drives the height.
@@ -31,10 +54,8 @@ body {
    is a sibling (outside this container) so it is never clipped.           */
 .overlay-container {
   width: 100%;
-  padding-right: 8px;
   max-height: 0;
   overflow: hidden;
-  /* flex column so hub-feed can use flex:1 + min-height:0 for proper scroll */
   display: flex;
   flex-direction: column;
   background: rgb(8 10 22 / var(--hub-bg-alpha, 0.93));
@@ -48,39 +69,11 @@ body {
   opacity: 0;
 }
 .overlay-container.visible {
-  /* max-height is overridden inline (hubHeight state) when visible */
   max-height: 560px;
   opacity: 1;
 }
 
-/* ─── Resize handle — right edge, 14px wide, very easy to grab ──────────── */
-.resize-handle {
-  position: absolute;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  width: 14px;
-  cursor: ew-resize;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  -webkit-app-region: no-drag;
-  transition: background 140ms;
-}
-.resize-handle:hover  { background: rgba(82, 84, 204, 0.25); }
-.resize-handle:active { background: rgba(82, 84, 204, 0.45); }
-
-/* Grip dots inside resize handle */
-.resize-grip {
-  width: 3px;
-  height: 28px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.12);
-  transition: background 140ms;
-}
-.resize-handle:hover .resize-grip  { background: rgba(82, 84, 204, 0.7); }
-.resize-handle:active .resize-grip { background: #5254cc; }
+/* ─── Resize:both — browser tự vẽ handle ở bottom-right ───────────────── */
 
 /* ─── Drag bar — top zone, prominent, easy to grab ──────────────────────── */
 .drag-bar {
@@ -204,7 +197,7 @@ body {
 
 /* ─── Turn feed — scrollable ──────────────────────────────────────────────── */
 .hub-feed {
-  flex: 1;          /* take remaining space after drag-bar and bottom handle */
+  flex: 1;          /* take remaining space after drag-bar + bottom bar */
   min-height: 0;    /* CRITICAL: without this, flex child won't shrink to scroll */
   overflow-y: auto;
   overflow-x: hidden;
@@ -350,32 +343,6 @@ body {
   letter-spacing: 0.04em;
 }
 
-/* ─── Bottom resize handle ────────────────────────────────────────────── */
-.resize-handle-bottom {
-  height: 14px;
-  flex-shrink: 0;
-  cursor: ns-resize;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  -webkit-app-region: no-drag;
-  transition: background 140ms;
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
-}
-.resize-handle-bottom:hover  { background: rgba(82, 84, 204, 0.18); }
-.resize-handle-bottom:active { background: rgba(82, 84, 204, 0.35); }
-
-/* Horizontal grip bar inside bottom handle */
-.resize-grip-h {
-  width: 32px;
-  height: 3px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.1);
-  transition: background 140ms;
-}
-.resize-handle-bottom:hover  .resize-grip-h { background: rgba(82, 84, 204, 0.7); }
-.resize-handle-bottom:active .resize-grip-h { background: #5254cc; }
-
 /* ─── Light theme ────────────────────────────────────────────────────────────
    Toggle by adding class .hub-theme--light on .overlay-wrapper               */
 
@@ -424,8 +391,8 @@ body {
 /* Empty state */
 .hub-theme--light .hub-empty        { color: rgba(80, 100, 150, 0.45); }
 
-/* Resize handles */
-.hub-theme--light .resize-grip      { background: rgba(0, 0, 0, 0.12); }
-.hub-theme--light .resize-grip-h    { background: rgba(0, 0, 0, 0.10); }
-.hub-theme--light .resize-handle:hover        { background: rgba(82, 84, 204, 0.15); }
-.hub-theme--light .resize-handle-bottom:hover { background: rgba(82, 84, 204, 0.10); }
+/* ─── Spin animation ──────────────────────────────────────────────────── */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}

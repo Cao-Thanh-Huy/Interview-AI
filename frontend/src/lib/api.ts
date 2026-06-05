@@ -79,42 +79,28 @@ export async function getHistorySession(sessionId: string): Promise<SessionDetai
 }
 
 /**
- * Stream a mock-scoring response.
- * transcript = the question text; suggestion + userAnswer are extra fields.
+ * Gọi AI Interviewer: tạo câu hỏi + gợi ý trả lời
  */
-export async function streamMockScoring(
-  question: string,
-  suggestion: string,
-  userAnswer: string,
-  context: string,
-  onChunk: (chunk: string) => void,
-  signal?: AbortSignal,
-): Promise<void> {
-  const res = await fetch(`${BASE}/completion`, {
+export async function practiceTurn(
+  prompt: string,
+  action: 'start' | 'next',
+  context?: string,
+  sessionId?: string,
+): Promise<{ question: string; suggestion: string; questionModel?: string; suggestionModel?: string }> {
+  const res = await fetch(`${BASE}/practice/turn`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      transcript: question,
-      context,
-      mode: 'mock-scoring',
-      suggestion,
-      userAnswer,
-    }),
-    signal,
+    body: JSON.stringify({ prompt, action, context, sessionId }),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
     throw new Error(err.error ?? `HTTP ${res.status}`)
   }
-  const reader = res.body?.getReader()
-  if (!reader) throw new Error('No response body')
-  const decoder = new TextDecoder()
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    onChunk(decoder.decode(value, { stream: true }))
-  }
+  return res.json()
 }
+
+let _lastTranslateModel = ''
+export function getLastTranslateModel(): string { return _lastTranslateModel }
 
 export async function translateText(text: string): Promise<string> {
   const res = await fetch(`${BASE}/completion/translate`, {
@@ -124,6 +110,7 @@ export async function translateText(text: string): Promise<string> {
   })
   if (!res.ok) throw new Error('Translation failed')
   const data = await res.json()
+  _lastTranslateModel = data.model || _lastTranslateModel
   return data.translation
 }
 
