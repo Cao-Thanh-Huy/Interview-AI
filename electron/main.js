@@ -59,7 +59,11 @@ const DEV_DIST      = path.join(__dirname, '..', 'frontend', 'dist', 'index.html
 const PROD_DIST     = path.join(ROOT, 'frontend-dist', 'index.html')
 
 // Backend (production only — dev uses start.ps1)
-const PROD_NODE     = path.join(ROOT, 'runtime', 'node.exe')
+const isWin = process.platform === 'win32'
+const PROD_NODE     = (() => {
+  const p = path.join(ROOT, 'runtime', isWin ? 'node.exe' : 'node')
+  return require('fs').existsSync(p) ? p : process.execPath  // fallback to Electron's Node
+})()
 const PROD_BACKEND  = path.join(ROOT, 'app', 'index.js')
 
 let backendProcess    = null
