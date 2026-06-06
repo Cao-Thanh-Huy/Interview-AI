@@ -1,8 +1,22 @@
 import nodeMachineId from 'node-machine-id'
 const { machineIdSync } = nodeMachineId
 import { createHmac } from 'node:crypto'
-import { readFileSync, existsSync, writeFileSync } from 'node:fs'
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { platform, homedir } from 'node:os'
+
+// Thư mục dữ liệu persistent — tự động detect OS, không cần Electron
+function getDataDir(): string {
+  // Ưu tiên env var từ Electron (nếu có)
+  if (process.env.INTELLIVIEW_DATA_DIR) return process.env.INTELLIVIEW_DATA_DIR
+  // Tự động chọn path persistent theo OS (giống logic Electron app.getPath('userData'))
+  const appName = 'IntelliView'
+  const home = homedir()
+  if (platform() === 'darwin') return join(home, 'Library', 'Application Support', appName)
+  if (platform() === 'win32') return join(process.env.APPDATA || home, appName)
+  return join(home, '.config', appName) // Linux
+}
+const DATA_DIR = getDataDir()
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ⚠️  ĐỔI CHUỖI NÀY TRƯỚC KHI PHÁT HÀNH — GIỮ BÍ MẬT TUYỆT ĐỐI
@@ -38,8 +52,9 @@ export function getHWID(): string {
 export function validateLicense(): LicenseResult {
   const hwid = getHWID()
 
-  // Tìm license.key tại thư mục chạy exe (process.cwd()) hoặc thư mục cha
+  // Tìm license.key: ưu tiên DATA_DIR (persistent), fallback về cwd
   const candidatePaths = [
+    join(DATA_DIR, 'license.key'),
     join(process.cwd(), 'license.key'),
     join(process.cwd(), '..', 'license.key'),
   ]
@@ -118,7 +133,9 @@ export function validateLicense(): LicenseResult {
  * Được gọi từ route /api/license/activate khi khách hàng nhập key qua UI.
  */
 export function activateLicense(keyContent: string): LicenseResult {
-  const targetPath = join(process.cwd(), 'license.key')
+  // Ghi vào DATA_DIR, tạo thư mục nếu chưa có
+  try { mkdirSync(DATA_DIR, { recursive: true }) } catch {}
+  const targetPath = join(DATA_DIR, 'license.key')
   try {
     writeFileSync(targetPath, keyContent.trim(), 'utf-8')
   } catch {

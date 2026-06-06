@@ -1,17 +1,31 @@
 import { Hono } from 'hono'
 import fs from 'node:fs'
 import path from 'node:path'
+import { platform, homedir } from 'node:os'
 
 export const settingsRouter = new Hono()
 
-// Tìm file .env đang được dùng (cwd/.env ưu tiên, sau đó cwd/../.env)
+// Thư mục dữ liệu persistent — tự động detect OS, không cần Electron
+function getDataDir(): string {
+  if (process.env.INTELLIVIEW_DATA_DIR) return process.env.INTELLIVIEW_DATA_DIR
+  const appName = 'IntelliView'
+  const home = homedir()
+  if (platform() === 'darwin') return path.join(home, 'Library', 'Application Support', appName)
+  if (platform() === 'win32') return path.join(process.env.APPDATA || home, appName)
+  return path.join(home, '.config', appName)
+}
+const DATA_DIR = getDataDir()
+
+// Tìm file .env: ưu tiên DATA_DIR (persistent, ngoài .app), fallback cwd
 function getEnvFilePath(): string {
+  const dataDir = path.resolve(DATA_DIR, '.env')
   const cwd = process.cwd()
   const current = path.resolve(cwd, '.env')
   const parent = path.resolve(cwd, '../.env')
+  if (fs.existsSync(dataDir)) return dataDir
   if (fs.existsSync(current)) return current
   if (fs.existsSync(parent)) return parent
-  return current // fallback: tạo mới ở cwd
+  return dataDir // fallback: tạo mới ở DATA_DIR
 }
 
 /**
@@ -46,6 +60,8 @@ settingsRouter.post('/api-keys', async (c) => {
 
   try {
     const envPath = getEnvFilePath()
+    // Tạo thư mục DATA_DIR nếu chưa tồn tại
+    try { fs.mkdirSync(path.dirname(envPath), { recursive: true }) } catch {}
     let envContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf-8') : ''
 
     // Hàm helper: set hoặc update một dòng trong .env

@@ -32,7 +32,10 @@
           "arch": ["x64", "arm64"]
         }
       ],
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "extendInfo": {
+        "LSUIElement": true
+      }
     },
     "nsis": {
       "oneClick": true,

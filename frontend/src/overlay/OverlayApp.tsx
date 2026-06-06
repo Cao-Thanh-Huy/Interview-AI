@@ -26,6 +26,7 @@ declare global {
       stop:           () => void
       setInteractive: (interactive: boolean) => void
       resizeWidth:    (w: number) => void
+      resizeHeight:   (h: number) => void
       dragStart:      () => void
       dragEnd:        () => void
       onWindowResized?: (cb: (w: number) => void) => () => void
@@ -506,6 +507,7 @@ export function OverlayApp() {
       localStorage.setItem('hub-width', String(hubWidthRef.current))
       localStorage.setItem('hub-height', String(hubHeightRef.current))
       window.electronOverlay?.resizeWidth(hubWidthRef.current)
+      window.electronOverlay?.resizeHeight(hubHeightRef.current)
       el.removeEventListener('pointermove', onMove)
       el.removeEventListener('pointerup', onUp)
     }
@@ -525,14 +527,12 @@ export function OverlayApp() {
     document.addEventListener('mouseup', onUp)
   }, [])
 
-  if (!isActive) return null
-
-  const hasContent = turns.length > 0 || (mode === 'live' && !!interimText)
-  const latestTurnIsGenerating = turns.length > 0 && turns[turns.length - 1].isGenerating
+  const hasContent = isActive && (turns.length > 0 || (mode === 'live' && !!interimText))
+  const latestTurnIsGenerating = isActive && turns.length > 0 && turns[turns.length - 1].isGenerating
 
   return (
     <div
-      className={`overlay-wrapper${hubTheme === 'light' ? ' hub-theme--light' : ''}`}
+      className={`overlay-wrapper${hubTheme === 'light' ? ' hub-theme--light' : ''}${!isActive ? ' overlay-wrapper--idle' : ''}`}
       style={{ width: hubWidth }}
       onMouseEnter={() => window.electronOverlay?.setInteractive(true)}
       onMouseLeave={() => window.electronOverlay?.setInteractive(false)}

@@ -5,9 +5,9 @@ import type {
   SessionDetail,
 } from './types'
 
-// In dev mode (Vite), VITE_API_BASE is empty → relative path uses Vite proxy
-// In Electron (file:// protocol), VITE_API_BASE = 'http://localhost:3001' → absolute URL
-const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api'
+// Dev (Vite proxy, http://): dùng relative path → proxy → backend
+// Production (Electron file://): dùng absolute URL → backend trực tiếp
+const BASE = (window.location.protocol === 'file:' ? 'http://localhost:3001' : '') + '/api'
 
 /** Helper for components that call fetch() directly */
 export const apiUrl = (path: string) => `${BASE}${path}`

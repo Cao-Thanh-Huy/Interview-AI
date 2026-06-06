@@ -21,6 +21,12 @@ body {
   position: relative;
 }
 
+/* Idle state — window visible nhưng chưa có session */
+.overlay-wrapper--idle {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* ─── Resize handle bottom-right ──────────────────────────────────────── */
 .resize-handle {
   position: absolute;

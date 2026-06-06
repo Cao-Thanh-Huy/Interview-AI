@@ -273,7 +273,6 @@ async function createOverlay() {
     transparent: true,
     alwaysOnTop: true,
     skipTaskbar: true,
-    type: 'panel',            // macOS: panel behavior giúp float trên app khác
     resizable: true,       // user can resize width
     movable: true,
     minimizable: false,
@@ -293,10 +292,8 @@ async function createOverlay() {
   // borders on Windows can cause getSize/setSize to include non-client area)
   overlayWindow.setContentSize(W, 600)
 
-  // Overlay floats above other apps (screen-saver = highest level)
+  // Overlay floats above everything (screen-saver level)
   overlayWindow.setAlwaysOnTop(true, 'screen-saver')
-  // Bộ 3 API để ép cửa sổ nổi trên macOS
-  overlayWindow.setContentProtection(true)
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   // Start click-through by default (ghost mode)
   overlayWindow.setIgnoreMouseEvents(true, { forward: true })
@@ -395,16 +392,6 @@ ipcMain.on('overlay:resize-width', (_, newWidth) => {
   writeConfig({ ...readConfig(), hubWidth: clamped })
 })
 
-// Resize overlay height — called khi user kéo resize handle dưới cùng
-ipcMain.on('overlay:resize-height', (_, newHeight) => {
-  if (!overlayWindow) return
-  const clamped = Math.min(550, Math.max(120, Math.round(Number(newHeight)) || 340))
-  const [w] = overlayWindow.getContentSize()
-  overlayWindow.setContentSize(w, clamped + 60) // +60 cho drag bar + model status row
-  writeConfig({ ...readConfig(), hubHeight: clamped })
-})
-
-
 
 // Native drag via polling — more robust than CSS -webkit-app-region: drag
 // because it survives mouse leaving the window (which would kill setIgnoreMouseEvents)
@@ -455,37 +442,68 @@ ipcMain.handle('audio:get-desktop-source-id', async () => {
 
 // ─── Session IPC ───────────────────────────────────────────────────────────────
 ipcMain.on('session:start', (_, data) => {
-  if (!overlayWindow) return
-
-  // Sync overlay window width with stored hubWidth before showing
-  // Prevents CSS/viewport desync (e.g. hubWidth=512 but window=440)
-  const w = Math.min(720, Math.max(260, data.hubWidth ?? 440))
   try {
-    const [, h] = overlayWindow.getContentSize()
-    overlayWindow.setContentSize(w, h)
-  } catch { try { overlayWindow.setContentSize(w, 600) } catch {} }
-  writeConfig({ ...readConfig(), hubWidth: w })
+    if (!overlayWindow || overlayWindow.isDestroyed()) return
 
-  // Hide main window, show overlay
-  mainWindow?.hide()
-  if (overlayReady) {
-    overlayWindow.webContents.send('session:init', data)
-  } else {
-    pendingSessionData = data
-  }
-  overlayWindow.show()
-  overlayWindow.focus()
-  // macOS: delay nhẹ để window hoàn tất show() rồi mới set level
-  setTimeout(() => {
+    // Sync overlay window width with stored hubWidth before showing
+    // Prevents CSS/viewport desync (e.g. hubWidth=512 but window=440)
+    const w = Math.min(720, Math.max(260, Number(data?.hubWidth) || 440))
+    writeConfig({ ...readConfig(), hubWidth: w })
+
+    // Hide main window, show overlay
+    mainWindow?.hide()
+    if (process.platform === 'darwin') {
+      app.dock?.hide()
+    }
+
+    if (overlayReady) {
+      overlayWindow.webContents.send('session:init', data)
+    } else {
+      pendingSessionData = data
+      console.log('[Session] Overlay not ready yet — buffering session:init')
+    }
+
+    // Show first, then set size — macOS cần show() trước khi gọi setContentSize
+    overlayWindow.show()
+    try { overlayWindow.setContentSize(w, 600) } catch {}
     overlayWindow.setAlwaysOnTop(true, 'screen-saver')
-  }, 100)
-  console.log('[Session] Started — overlay visible')
+    overlayWindow.setIgnoreMouseEvents(true, { forward: true })
+    overlayWindow.focus()
+
+    // macOS: cursor polling để hover-to-activate
+    if (process.platform === 'darwin') {
+      if (hoverInterval) { clearInterval(hoverInterval); hoverInterval = null }
+      hoverInterval = setInterval(() => {
+        if (!overlayWindow || overlayWindow.isDestroyed() || !overlayWindow.isVisible()) {
+          clearInterval(hoverInterval); hoverInterval = null
+          return
+        }
+        const [winX, winY] = overlayWindow.getPosition()
+        const [winW, winH] = overlayWindow.getSize()
+        const cursor = screen.getCursorScreenPoint()
+        const padding = 10
+        const inside =
+          cursor.x >= winX - padding &&
+          cursor.x <= winX + winW + padding &&
+          cursor.y >= winY - padding &&
+          cursor.y <= winY + winH + padding
+        overlayWindow.setIgnoreMouseEvents(!inside, { forward: true })
+      }, 150)
+    }
+
+    console.log('[Session] Started — overlay visible')
+  } catch (err) {
+    console.error('[Session] Error starting session:', err)
+  }
 })
 
 ipcMain.on('session:stop', () => {
   // Stop cursor polling
   if (hoverInterval) { clearInterval(hoverInterval); hoverInterval = null }
   overlayWindow?.hide()
+  if (process.platform === 'darwin') {
+    app.dock?.show()
+  }
   mainWindow?.show()
   mainWindow?.focus()
   console.log('[Session] Stopped — main window restored')
