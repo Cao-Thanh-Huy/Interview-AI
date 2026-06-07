@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { Target } from 'lucide-react'
-import { practiceTurn, translateText } from '@/lib/api'
+import { practiceTurn, translateText, fetchTTSAudio } from '@/lib/api'
 import { useInterviewStore } from '@/store/useInterviewStore'
 
 // ─── Target Orb — visual anchor (giống MicOrb bên SetupTab) ──────────────────
@@ -98,6 +98,52 @@ export function PracticePanel() {
   // Check if Electron
   const electronSession = (window as unknown as { electronSession?: { start: (d: unknown) => void } }).electronSession
 
+  // ── TTS settings ────────────────────────────────────────────────────────────
+  const [panelTtsEnabled, setPanelTtsEnabled] = useState(() => localStorage.getItem('hub-tts') !== 'false')
+  const [panelTtsVoice, setPanelTtsVoice] = useState(() => localStorage.getItem('hub-tts-voice') || 'aura-asteria-en')
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null)
+
+  const handlePanelTtsToggle = useCallback(() => {
+    setPanelTtsEnabled(prev => {
+      const next = !prev
+      localStorage.setItem('hub-tts', String(next))
+      return next
+    })
+  }, [])
+
+  const handlePanelTtsVoice = useCallback((voice: string) => {
+    setPanelTtsVoice(voice)
+    localStorage.setItem('hub-tts-voice', voice)
+  }, [])
+
+  const handlePreviewVoice = useCallback(async (voice: string) => {
+    previewAudioRef.current?.pause()
+    previewAudioRef.current = null
+    try {
+      const url = await fetchTTSAudio('Hello, welcome to the interview practice. How would you describe your experience?', voice)
+      const audio = new Audio(url)
+      previewAudioRef.current = audio
+      audio.onended = () => URL.revokeObjectURL(url)
+      audio.play().catch(() => {})
+    } catch {}
+  }, [])
+
+  // ── Browser TTS playback ────────────────────────────────────────────────────
+  const browserAudioRef = useRef<HTMLAudioElement | null>(null)
+  const speakBrowserText = useCallback((text: string) => {
+    if (!panelTtsEnabled || !text.trim()) return
+    browserAudioRef.current?.pause()
+    browserAudioRef.current = null
+    fetchTTSAudio(text.trim(), panelTtsVoice)
+      .then(url => {
+        const audio = new Audio(url)
+        browserAudioRef.current = audio
+        audio.onended = () => URL.revokeObjectURL(url)
+        audio.play().catch(() => {})
+      })
+      .catch(() => {})
+  }, [panelTtsEnabled, panelTtsVoice])
+
   // ── Browser fallback state ─────────────────────────────────────────────────
   const [state, setState]           = useState<PracticeState>('idle')
   const [turns, setTurns]           = useState<PracticeTurn[]>([])
@@ -131,6 +177,7 @@ export function PracticePanel() {
             id: Date.now().toString(), question: result.question, suggestion: result.suggestion,
             showSuggestionTranslation: false,
           }
+          speakBrowserText(result.question)
           translateText(result.question).then(vn => setTurns(prev => prev.map(t => t.id === newTurn.id ? { ...t, questionTranslation: vn } : t))).catch(() => {})
           if (result.suggestion) translateText(result.suggestion).then(vn => setTurns(prev => prev.map(t => t.id === newTurn.id ? { ...t, suggestionTranslation: vn } : t))).catch(() => {})
           setTurns([newTurn]); setState('answered')
@@ -151,13 +198,14 @@ export function PracticePanel() {
         id: Date.now().toString(), question: result.question, suggestion: result.suggestion,
         showSuggestionTranslation: false,
       }
+      speakBrowserText(result.question)
       translateText(result.question).then(vn => setTurns(prev => prev.map(t => t.id === newTurn.id ? { ...t, questionTranslation: vn } : t))).catch(() => {})
       if (result.suggestion) translateText(result.suggestion).then(vn => setTurns(prev => prev.map(t => t.id === newTurn.id ? { ...t, suggestionTranslation: vn } : t))).catch(() => {})
       setTurns(prev => [...prev, newTurn]); setState('answered')
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to get next question'); setState('error')
     }
-  }, [persona, storeContext])
+  }, [persona, storeContext, speakBrowserText])
 
   const handleTranslateSuggestion = useCallback((id: string) => {
     setTurns(prev => prev.map(t => {
@@ -221,6 +269,49 @@ export function PracticePanel() {
           />
         </div>
 
+        {/* ── TTS Settings ───────────────────────────────────────────────── */}
+        <div style={{ width: '100%', maxWidth: 360, marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <input
+              id="tts-toggle"
+              type="checkbox"
+              checked={panelTtsEnabled}
+              onChange={handlePanelTtsToggle}
+              style={{ accentColor: '#5254cc', cursor: 'pointer' }}
+            />
+            <label htmlFor="tts-toggle" style={{ fontSize: 12, color: 'var(--text)', opacity: 0.75, cursor: 'pointer', userSelect: 'none' }}>
+              Auto-read questions aloud
+            </label>
+          </div>
+          {panelTtsEnabled && (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <select
+                value={panelTtsVoice}
+                onChange={e => handlePanelTtsVoice(e.target.value)}
+                className="input-dark"
+                style={{ flex: 1, fontSize: 12, padding: '6px 8px' }}
+              >
+                <option value="aura-asteria-en">Asteria (Nữ) — mặc định</option>
+                <option value="aura-orion-en">Orion (Nam) — giọng trầm</option>
+                <option value="aura-luna-en">Luna (Nữ) — nhẹ nhàng</option>
+              </select>
+              <button
+                onClick={() => handlePreviewVoice(panelTtsVoice)}
+                title="Preview voice"
+                style={{
+                  width: 30, height: 28, borderRadius: 4,
+                  background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.2)',
+                  color: '#a5b4fc', cursor: 'pointer', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center', fontSize: 13,
+                  flexShrink: 0, lineHeight: 1,
+                }}
+              >
+                ▶
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* Primary CTA — giống Start Session */}
         <button
           onClick={handleStart}
@@ -269,6 +360,48 @@ export function PracticePanel() {
               <input value={persona} onChange={e => setPersona(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && state === 'idle') handleStart() }} placeholder="e.g. khó tính, friendly senior, baby..." className="input-dark" style={{ flex: 1, fontSize: 13 }} disabled={false} />
               <button onClick={handleStart} disabled={!persona.trim()} className="btn" style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>Start Practice</button>
             </div>
+          </div>
+          {/* ── TTS Settings (browser) ──────────────────────────────── */}
+          <div style={{ width: '100%', maxWidth: 400, marginTop: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <input
+                id="tts-toggle-browser"
+                type="checkbox"
+                checked={panelTtsEnabled}
+                onChange={handlePanelTtsToggle}
+                style={{ accentColor: '#5254cc', cursor: 'pointer' }}
+              />
+              <label htmlFor="tts-toggle-browser" style={{ fontSize: 11, color: 'var(--muted)', cursor: 'pointer', userSelect: 'none' }}>
+                Auto-read questions aloud
+              </label>
+            </div>
+            {panelTtsEnabled && (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <select
+                  value={panelTtsVoice}
+                  onChange={e => handlePanelTtsVoice(e.target.value)}
+                  className="input-dark"
+                  style={{ flex: 1, fontSize: 11, padding: '4px 6px' }}
+                >
+                  <option value="aura-asteria-en">Asteria (Nữ)</option>
+                  <option value="aura-orion-en">Orion (Nam)</option>
+                  <option value="aura-luna-en">Luna (Nữ)</option>
+                </select>
+                <button
+                  onClick={() => handlePreviewVoice(panelTtsVoice)}
+                  title="Preview voice"
+                  style={{
+                    width: 26, height: 24, borderRadius: 4,
+                    background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(99,102,241,0.2)',
+                    color: '#a5b4fc', cursor: 'pointer', display: 'flex',
+                    alignItems: 'center', justifyContent: 'center', fontSize: 11,
+                    flexShrink: 0, lineHeight: 1,
+                  }}
+                >
+                  ▶
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

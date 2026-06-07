@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef, CSSProperties } from 'react'
 import { useDeepgram } from '@/hooks/useDeepgram'
-import { streamCompletion, translateText, practiceTurn, getLastTranslateModel } from '@/lib/api'
+import { streamCompletion, translateText, practiceTurn, getLastTranslateModel, fetchTTSAudio } from '@/lib/api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface SessionData {
@@ -174,6 +174,12 @@ export function OverlayApp() {
     return (v >= 120 && v <= 550) ? v : 340
   })
 
+  // ── TTS state — speak questions aloud in practice mode ─────────────────────
+  const [ttsEnabled, setTtsEnabled] = useState(() => localStorage.getItem('hub-tts') !== 'false')
+  const [ttsVoice, setTtsVoice] = useState(() => localStorage.getItem('hub-tts-voice') || 'aura-asteria-en')
+  const [isSpeaking, setIsSpeaking] = useState(false)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
   const abortRef       = useRef<AbortController | null>(null)
   const streamBuffer   = useRef('')
   const activeTurnId   = useRef<string | null>(null)
@@ -280,9 +286,61 @@ export function OverlayApp() {
     }
   }, [sessionData, addTurn, appendBullet, finalizeTurn])
 
+  // ── TTS: speak text aloud ──────────────────────────────────────────────────
+  const speakText = useCallback(async (text: string) => {
+    if (!ttsEnabled || !text.trim()) return
+
+    // Stop any current playback
+    audioRef.current?.pause()
+    audioRef.current = null
+
+    // Don't speak error messages
+    if (text.startsWith('⚠️')) return
+
+    try {
+      setIsSpeaking(true)
+      const audioUrl = await fetchTTSAudio(text.trim(), ttsVoice)
+      const audio = new Audio(audioUrl)
+      audioRef.current = audio
+
+      audio.onended = () => {
+        setIsSpeaking(false)
+        URL.revokeObjectURL(audioUrl)
+      }
+      audio.onerror = () => {
+        setIsSpeaking(false)
+        URL.revokeObjectURL(audioUrl)
+      }
+
+      await audio.play()
+    } catch (err) {
+      console.error('[TTS] Failed to speak:', err)
+      setIsSpeaking(false)
+    }
+  }, [ttsEnabled, ttsVoice])
+
+  const toggleTts = useCallback(() => {
+    setTtsEnabled(prev => {
+      const next = !prev
+      localStorage.setItem('hub-tts', String(next))
+      if (!next) {
+        // Stop speaking immediately when turning off
+        audioRef.current?.pause()
+        audioRef.current = null
+        setIsSpeaking(false)
+      }
+      return next
+    })
+  }, [])
+
   // ── Practice turn — AI tự hỏi + gợi ý ──────────────────────────────────────
   const handlePracticeTurn = useCallback(async (action: 'start' | 'next') => {
     if (!practicePrompt) return
+
+    // Stop any ongoing speech before starting new turn
+    audioRef.current?.pause()
+    audioRef.current = null
+    setIsSpeaking(false)
 
     abortRef.current?.abort()
     abortRef.current = new AbortController()
@@ -307,6 +365,9 @@ export function OverlayApp() {
 
       // Set question
       setTurns(prev => prev.map(t => t.id === id ? { ...t, question: result.question } : t))
+
+      // TTS: speak the question aloud
+      speakText(result.question)
 
       // Auto-translate question
       translateText(result.question)
@@ -555,9 +616,9 @@ export function OverlayApp() {
           {/* Status indicator */}
           {mode === 'practice' ? (
             <div className="drag-bar__status">
-              <span className="status-dot live" />
+              <span className={`status-dot ${isSpeaking ? 'live' : 'dim'}`} />
               <span className="drag-bar__label">
-                {latestTurnIsGenerating ? 'Thinking…' : 'Practice'}
+                {latestTurnIsGenerating ? 'Thinking…' : isSpeaking ? 'Speaking… 🔊' : 'Practice'}
               </span>
             </div>
           ) : (
@@ -581,6 +642,17 @@ export function OverlayApp() {
             <button className="icon-btn icon-btn--lg" onClick={toggleTheme} title={hubTheme === 'dark' ? 'Switch to light' : 'Switch to dark'}>
               {hubTheme === 'dark' ? '☀' : '☾'}
             </button>
+            {/* TTS toggle — only show in practice mode */}
+            {mode === 'practice' && (
+              <button
+                className="icon-btn icon-btn--lg"
+                onClick={toggleTts}
+                title={ttsEnabled ? 'Mute voice' : 'Enable voice'}
+                style={{ color: ttsEnabled ? (isSpeaking ? '#22c55e' : 'rgba(140,155,190,0.55)') : 'rgba(100,115,150,0.35)' }}
+              >
+                {ttsEnabled ? '🔊' : '🔇'}
+              </button>
+            )}
             <div className="action-sep" />
             {mode === 'practice' && (
               <button
