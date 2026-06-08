@@ -141,7 +141,8 @@ export function useDeepgram({
         vad_events: 'true',
         endpointing: '300',
         // Tell Deepgram the exact container/codec so it doesn't have to guess
-        ...(preferredMime.includes('opus') && { encoding: 'opus', container: 'webm' }),
+        // Only send encoding for streaming (container is for pre-recorded, not WebSocket)
+        ...(preferredMime.includes('opus') ? { encoding: 'opus' } : {}),
       })
 
       const wsUrl = `wss://api.deepgram.com/v1/listen?${params}`
