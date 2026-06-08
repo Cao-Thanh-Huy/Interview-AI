@@ -114,6 +114,17 @@ export async function translateText(text: string): Promise<string> {
   return data.translation
 }
 
+export async function compressText(text: string): Promise<string> {
+  const res = await fetch(`${BASE}/completion/compress`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  })
+  if (!res.ok) throw new Error('Compression failed')
+  const data = await res.json()
+  return data.compressed
+}
+
 /**
  * Calls Deepgram TTS via backend proxy.
  * Returns an object URL pointing to the audio blob (caller must revoke after use).

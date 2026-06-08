@@ -129,6 +129,25 @@ completionRouter.post('/translate', async (c) => {
   }
 })
 
+// ─── Compress — nén text dài xuống ~4500 ký tự ──────────────────────────────
+completionRouter.post('/compress', async (c) => {
+  const { text } = await c.req.json<{ text: string }>()
+  if (!text?.trim()) return c.json({ error: 'text is required' }, 400)
+
+  try {
+    const r = await callWithFallback(
+      [{ role: 'user', content: `Condense this text to about 4500 characters (currently ${text.length}). Keep ALL key information: skills, experience, projects, technologies. Remove redundancy, keep everything important.\n\n${text}` }],
+      MODELS_SUMMARY,
+      { temperature: 0.3, max_tokens: 2000 },
+    )
+    const compressed = r.content?.replace(/```markdown\n?|```/g, '').replace(/\n{3,}/g, '\n\n').trim()
+    return c.json({ compressed, originalLength: text.length, compressedLength: compressed?.length ?? 0 })
+  } catch (err: any) {
+    console.error('Compress error:', err?.message || err)
+    return c.json({ error: 'Compression failed' }, 500)
+  }
+})
+
 completionRouter.post('/', async (c) => {
   let body
   try {

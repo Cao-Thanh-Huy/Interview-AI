@@ -76,11 +76,36 @@ ${truncated}`
     }
 
     // Lọc rác từ Qwen3 output: <think> blocks + ```markdown code fences
-    const cleanSummary = summary
+    let cleanSummary = summary
       .replace(/<think>[\s\S]*?<\/think>/g, '')
       .replace(/```markdown\n?|```/g, '')
       .replace(/\n{3,}/g, '\n\n')
       .trim()
+
+    // Nếu summary quá dài (> 5000 ký tự), tự động nén xuống ~4500
+    if (cleanSummary.length > 5000) {
+      console.log(`[CV] Summary too long (${cleanSummary.length} chars), compressing...`)
+      try {
+        const compressRes = await groq.chat.completions.create({
+          messages: [
+            { role: 'user', content: `Condense this candidate summary to about 4500 characters (currently ${cleanSummary.length}). Keep ALL key information: skills, experience, projects, education, technologies. Remove redundancy, keep everything important.\n\n${cleanSummary}` },
+          ],
+          model: GROQ_MODEL_SUMMARY,
+          temperature: 0.3,
+          max_tokens: 3000,
+        })
+        const compressed = compressRes.choices[0]?.message?.content?.trim() || ''
+        if (compressed.length > 1000) {
+          cleanSummary = compressed
+            .replace(/<think>[\s\S]*?<\/think>/g, '')
+            .replace(/```markdown\n?|```/g, '')
+            .trim()
+          console.log(`[CV] Compressed to ${cleanSummary.length} chars`)
+        }
+      } catch (err) {
+        console.warn('[CV] Compression failed, keeping original:', err)
+      }
+    }
 
     // Lưu vào hotMemory để dùng trong interview
     hotMemory.setCandidateSummary(cleanSummary)
