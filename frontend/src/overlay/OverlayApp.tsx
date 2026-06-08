@@ -144,6 +144,8 @@ export function OverlayApp() {
   const [practiceContext, setPracticeContext]   = useState('')
   const [practiceSessionId, setPracticeSessionId] = useState('')
   const [activeModels, setActiveModels] = useState({ question: '70B', summary: '70B', translate: '70B' })
+  const [manualInput, setManualInput] = useState('')
+  const [manualError, setManualError] = useState('')
 
   // Font size — +/- buttons in bar, persist to localStorage
   const [fontSize, setFontSize] = useState(() => {
@@ -285,6 +287,53 @@ export function OverlayApp() {
       finalizeTurn(id)
     }
   }, [sessionData, addTurn, appendBullet, finalizeTurn])
+
+  // ── Manual question input — type a question, get AI suggestion ──────────────
+  const handleManualSubmit = useCallback(async () => {
+    const text = manualInput.trim()
+    if (!text) return
+
+    setManualInput('')
+    setManualError('')
+
+    abortRef.current?.abort()
+    abortRef.current = new AbortController()
+
+    const id = addTurn(text)
+
+    streamBuffer.current = ''
+
+    const ctx = sessionData?.context ?? ''
+    const sid = sessionData?.sessionId
+
+    try {
+      await streamCompletion(
+        text, ctx, 'copilot',
+        (chunk) => {
+          streamBuffer.current += chunk
+          const lines = streamBuffer.current.split('\n')
+          streamBuffer.current = lines.pop() ?? ''
+
+          lines
+            .map(l => l.replace(/^[\s•\-\*\d\.]+/, '').trim())
+            .filter(Boolean)
+            .forEach(b => appendBullet(id, b))
+        },
+        abortRef.current.signal,
+        sid,
+        [],
+      )
+
+      const rem = streamBuffer.current.replace(/^[\s•\-\*\d\.]+/, '').trim()
+      if (rem) appendBullet(id, rem)
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        setManualError(err?.message || 'Request failed')
+      }
+    } finally {
+      finalizeTurn(id)
+    }
+  }, [manualInput, sessionData, addTurn, appendBullet, finalizeTurn])
 
   // ── TTS: speak text aloud ──────────────────────────────────────────────────
   const speakText = useCallback(async (text: string) => {
@@ -465,7 +514,8 @@ export function OverlayApp() {
     const isGenerating = turns[turns.length - 1].isGenerating
 
     const handler = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !isGenerating) {
+      // Skip Space shortcut when typing in an input field
+      if (e.code === 'Space' && !isGenerating && document.activeElement?.tagName !== 'INPUT') {
         e.preventDefault()
         handlePracticeTurn('next')
       }
@@ -732,6 +782,39 @@ export function OverlayApp() {
           <div className="hub-empty">
             {mode === 'practice' ? 'Preparing your first question...' : (status === 'connected' ? 'Listening…' : 'Connecting…')}
           </div>
+        )}
+
+        {/* ── Manual question input ───────────────────────────────────────────── */}
+        {isActive && (
+          <div className="hub-input-row">
+            <input
+              className="hub-input"
+              value={manualInput}
+              onChange={e => setManualInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  setManualError('')
+                  handleManualSubmit()
+                }
+              }}
+              placeholder={mode === 'practice' ? 'Ask a custom question...' : 'Type a question...'}
+              disabled={latestTurnIsGenerating}
+            />
+            <button
+              className="hub-send-btn"
+              onClick={() => { setManualError(''); handleManualSubmit() }}
+              disabled={!manualInput.trim() || latestTurnIsGenerating}
+              title="Send"
+            >
+              ▶
+            </button>
+          </div>
+        )}
+
+        {/* ── Manual error ───────────────────────────────────────────────── */}
+        {manualError && (
+          <div className="hub-manual-error">{manualError}</div>
         )}
 
       </div>

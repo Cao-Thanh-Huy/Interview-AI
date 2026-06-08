@@ -93,7 +93,7 @@ Rules:
     const sResult = await callWithFallback(
       suggestionMessages,
       MODELS_PRIORITY,
-      { temperature: 0.6, max_tokens: 500 },
+      { temperature: 0.2, max_tokens: 160 },
     )
     suggestion = sResult.content
     suggestionModel = sResult.model
