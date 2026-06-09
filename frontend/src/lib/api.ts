@@ -51,6 +51,32 @@ export async function streamCompletion(
 }
 
 /**
+ * Non-streaming completion — LLM trả về full answer trong 1 JSON response.
+ * Dùng cho isFinal #2+ để atomic replace suggestion, tránh flicker.
+ */
+export async function completeOnce(
+  transcript: string,
+  context: string,
+  mode: CompletionMode,
+  sessionId?: string,
+  history?: HistoryTurn[],
+): Promise<string> {
+  const res = await fetch(`${BASE}/completion`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transcript, context, mode, stream: false, sessionId, history }),
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+    throw new Error(err.error ?? `HTTP ${res.status}`)
+  }
+
+  const data = await res.json()
+  return data.answer
+}
+
+/**
  * Gửi CV text lên backend → AI summary (qwen3-32b) → trả markdown
  */
 export async function processCV(text: string, existingContext?: string): Promise<{ summary: string }> {

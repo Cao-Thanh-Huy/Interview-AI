@@ -31,8 +31,10 @@ export function useDeepgram({
   const keepAliveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const connectionIdRef = useRef(0)
   const analyserRef = useRef<AnalyserNode | null>(null)
-  const levelRafRef = useRef<number | null>(null)
+  const levelTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const audioCtxRef = useRef<AudioContext | null>(null)
+  const lastTranscriptTimeRef = useRef(Date.now())
+  const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const updateStatus = useCallback(
     (s: DeepgramStatus) => {
@@ -61,19 +63,20 @@ export function useDeepgram({
         analyser.getByteFrequencyData(buf)
         const avg = buf.reduce((s, v) => s + v, 0) / buf.length
         setAudioLevel(Math.round(avg))
-        levelRafRef.current = requestAnimationFrame(tick)
       }
-      levelRafRef.current = requestAnimationFrame(tick)
+      levelTimerRef.current = setInterval(tick, 200)
     } catch {
       // AudioContext not supported — ignore
     }
   }, [])
 
   const stopLevelMeter = useCallback(() => {
-    if (levelRafRef.current) cancelAnimationFrame(levelRafRef.current)
-    levelRafRef.current = null
+    if (levelTimerRef.current) {
+      clearInterval(levelTimerRef.current)
+      levelTimerRef.current = null
+    }
     analyserRef.current = null
-    audioCtxRef.current?.close().catch(() => {})
+    audioCtxRef.current?.close().catch(() => { })
     audioCtxRef.current = null
     setAudioLevel(0)
   }, [])
@@ -137,9 +140,9 @@ export function useDeepgram({
         interim_results: 'true',
         smart_format: 'true',
         punctuate: 'true',
-        utterance_end_ms: '1000',
+        utterance_end_ms: '3500',
         vad_events: 'true',
-        endpointing: '300',
+        endpointing: '800',
         // Tell Deepgram the exact container/codec so it doesn't have to guess
         // Only send encoding for streaming (container is for pre-recorded, not WebSocket)
         ...(preferredMime.includes('opus') ? { encoding: 'opus' } : {}),
@@ -175,6 +178,33 @@ export function useDeepgram({
 
         recorder.start(500)
         console.log('[Audio] MediaRecorder started, mimeType:', recorder.mimeType)
+
+        recorder.onerror = () => {
+          console.error('[Audio] MediaRecorder error ❌ — triggering reconnect')
+          recorder.stop()
+          wsRef.current?.close()
+          updateStatus('idle')
+        }
+        recorder.onstop = () => {
+          console.log('[Audio] MediaRecorder stopped')
+          // Chỉ null nếu recorder này vẫn là recorder hiện tại (tránh race với start())
+          if (recorderRef.current === recorder) {
+            recorderRef.current = null
+          }
+        }
+
+        // Watchdog: phát hiện zombie connection (WS open nhưng không có transcript)
+        if (watchdogRef.current) clearInterval(watchdogRef.current)
+        lastTranscriptTimeRef.current = Date.now()
+        watchdogRef.current = setInterval(() => {
+          const elapsed = Date.now() - lastTranscriptTimeRef.current
+          if (elapsed > 120000) {
+            console.warn(`[Watchdog] No transcript for ${Math.round(elapsed/1000)}s — reconnecting...`)
+            recorderRef.current?.stop()
+            wsRef.current?.close()
+            updateStatus('idle')
+          }
+        }, 10000)
       }
 
       ws.onmessage = (e) => {
@@ -188,13 +218,20 @@ export function useDeepgram({
 
             if (text.trim()) {
               if (data.is_final) {
-                pendingTranscriptRef.current +=
-                  (pendingTranscriptRef.current ? ' ' : '') + text
+                // Tránh pendingTranscriptRef tích lũy vô hạn
+                if (pendingTranscriptRef.current.length > 500) {
+                  pendingTranscriptRef.current = text
+                } else {
+                  pendingTranscriptRef.current +=
+                    (pendingTranscriptRef.current ? ' ' : '') + text
+                }
+                lastTranscriptTimeRef.current = Date.now()
                 onTranscript(pendingTranscriptRef.current, true)
               } else {
                 const fullText = pendingTranscriptRef.current
                   ? pendingTranscriptRef.current + ' ' + text
                   : text
+                lastTranscriptTimeRef.current = Date.now()
                 onTranscript(fullText, false)
               }
             }
@@ -213,6 +250,15 @@ export function useDeepgram({
 
       ws.onclose = (event) => {
         console.log(`[Deepgram] WebSocket closed — code: ${event.code}, reason: ${event.reason || '(no reason)'}, wasClean: ${event.wasClean}`)
+        // Bỏ qua nếu đây là WebSocket cũ (tránh race với start() mới)
+        if (currentId !== connectionIdRef.current) {
+          console.log('[Deepgram] Ignoring stale WS close event')
+          return
+        }
+        if (watchdogRef.current) {
+          clearInterval(watchdogRef.current)
+          watchdogRef.current = null
+        }
         const isNormal = event.code === 1000 || event.code === 1005
         if (!isNormal && event.code !== 0) {
           onError?.(`Connection closed unexpectedly (code: ${event.code})`)
@@ -224,6 +270,10 @@ export function useDeepgram({
 
       ws.onerror = (err) => {
         console.error('[Deepgram] WebSocket error ❌:', err)
+        if (currentId !== connectionIdRef.current) {
+          console.log('[Deepgram] Ignoring stale WS error')
+          return
+        }
         onError?.('WebSocket error. Check your API key and network connection.')
         stopLevelMeter()
         updateStatus('error')
@@ -379,6 +429,10 @@ export function useDeepgram({
     if (keepAliveIntervalRef.current) {
       clearInterval(keepAliveIntervalRef.current)
       keepAliveIntervalRef.current = null
+    }
+    if (watchdogRef.current) {
+      clearInterval(watchdogRef.current)
+      watchdogRef.current = null
     }
     isMutedRef.current = false
 

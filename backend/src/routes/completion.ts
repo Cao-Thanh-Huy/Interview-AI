@@ -159,7 +159,7 @@ completionRouter.post('/', async (c) => {
   const rawTranscript = typeof body.transcript === 'string'
     ? body.transcript
     : String(body.transcript ?? '')
-  const { context = '', sessionId, mode = 'copilot' } = body
+  const { context = '', sessionId, mode = 'copilot', stream: shouldStream = true } = body
 
   if (!rawTranscript.trim()) {
     return c.json({ error: 'transcript is required' }, 400)
@@ -251,6 +251,39 @@ Only output the score block above — no intro, no commentary.`
 
   let fullAnswer = ''
   const turnId = `turn-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+
+  // ── Non-streaming mode: collect all chunks, return JSON ────────────
+  if (shouldStream === false) {
+    for await (const chunk of groqStream) {
+      const raw = chunk.choices[0]?.delta?.content || ''
+      fullAnswer += raw
+    }
+    // Strip think blocks
+    fullAnswer = fullAnswer.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
+
+    // Persist to history
+    if (sessionId) {
+      try {
+        appendTurn(sessionId, context.substring(0, 200), {
+          id: turnId,
+          question: rawTranscript,
+          answer: fullAnswer,
+          timestamp: new Date().toISOString(),
+        })
+      } catch (err) {
+        console.error('historyStore appendTurn failed:', err)
+      }
+    }
+
+    // Update session summary
+    if (fullAnswer) {
+      updateSessionSummary(rawTranscript, fullAnswer).catch((err) =>
+        console.error('Session summary error:', err)
+      )
+    }
+
+    return c.json({ answer: fullAnswer, model: liveModel })
+  }
 
   return streamText(c, async (stream) => {
     let buf = ''

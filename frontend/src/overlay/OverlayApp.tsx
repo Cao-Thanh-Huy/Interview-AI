@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect, useRef, CSSProperties } from 'react'
+import { useState, useCallback, useEffect, useRef, memo, CSSProperties } from 'react'
 import { useDeepgram } from '@/hooks/useDeepgram'
-import { streamCompletion, translateText, practiceTurn, getLastTranslateModel, fetchTTSAudio } from '@/lib/api'
+import { streamCompletion, completeOnce, translateText, practiceTurn, getLastTranslateModel, fetchTTSAudio } from '@/lib/api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface SessionData {
@@ -52,7 +52,7 @@ function AudioBars({ level }: { level: number }) {
 }
 
 // ─── Single turn card ─────────────────────────────────────────────────────────
-function TurnCard({ turn, isLatest, onTranslateBullets }: { turn: Turn; isLatest: boolean; onTranslateBullets: (id: string) => void }) {
+const TurnCard = memo(function TurnCard({ turn, isLatest, onTranslateBullets }: { turn: Turn; isLatest: boolean; onTranslateBullets: (id: string) => void }) {
   const [showVietnamese, setShowVietnamese] = useState(false)
 
   const handleToggle = useCallback(() => {
@@ -127,12 +127,12 @@ function TurnCard({ turn, isLatest, onTranslateBullets }: { turn: Turn; isLatest
       )}
     </div>
   )
-}
+})
 
 // ─── Main Overlay App ─────────────────────────────────────────────────────────
 export function OverlayApp() {
   const [turns, setTurns]           = useState<Turn[]>([])
-  const [interimText, setInterimText] = useState('')  // live speech being typed
+  // interimText removed — question updates real-time on turn card
   const [sessionData, setSessionData] = useState<SessionData | null>(null)
   const [isActive, setIsActive]     = useState(false) // whether session is running
 
@@ -188,22 +188,32 @@ export function OverlayApp() {
   const feedRef        = useRef<HTMLDivElement>(null)
   const hubWidthRef    = useRef(hubWidth)
   const hubHeightRef   = useRef(hubHeight)
+  const turnsRef       = useRef(turns)
+  const lastTranscriptRef = useRef(0)  // debounce interim transcript
+  const suggestionCountRef = useRef(0) // revision counter: isFinal #1 → stream, #2+ → once
 
   // Keep refs in sync
   useEffect(() => { hubWidthRef.current  = hubWidth  }, [hubWidth])
   useEffect(() => { hubHeightRef.current = hubHeight }, [hubHeight])
+  turnsRef.current = turns  // sync every render (no deps — runs every render)
 
-  // ── Auto-scroll feed to bottom when new content ────────────────────────────
+  // ── Auto-scroll feed to bottom on new content (rAF-batched) ──────────────
+  const scrollRafRef = useRef<number | null>(null)
   useEffect(() => {
-    if (feedRef.current) {
-      feedRef.current.scrollTop = feedRef.current.scrollHeight
-    }
+    if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current)
+    scrollRafRef.current = requestAnimationFrame(() => {
+      if (feedRef.current) {
+        feedRef.current.scrollTop = feedRef.current.scrollHeight
+      }
+    })
+    return () => { if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current) }
   }, [turns])
 
   // ── Add or update a turn ───────────────────────────────────────────────────
   const addTurn = useCallback((question: string): string => {
     const id = Date.now().toString()
     activeTurnId.current = id
+    suggestionCountRef.current = 0  // reset counter cho turn mới
     setTurns(prev => [...prev, { id, question, bullets: [], isGenerating: true }].slice(-10))
     // Translate question in background
     translateText(question)
@@ -213,6 +223,10 @@ export function OverlayApp() {
       })
       .catch(() => {})
     return id
+  }, [])
+
+  const updateTurnQuestion = useCallback((id: string, question: string) => {
+    setTurns(prev => prev.map(t => t.id === id ? { ...t, question } : t))
   }, [])
 
   const appendBullet = useCallback((id: string, bullet: string) => {
@@ -228,7 +242,7 @@ export function OverlayApp() {
   }, [])
 
   const translateBullets = useCallback((id: string) => {
-    const turn = turns.find(t => t.id === id)
+    const turn = turnsRef.current.find(t => t.id === id)
     if (!turn || turn.bulletTranslation) return
     const fullText = turn.bullets.join('\n')
     translateText(fullText)
@@ -237,56 +251,105 @@ export function OverlayApp() {
         setTurns(prev => prev.map(t => t.id === id ? { ...t, bulletTranslation: lines } : t))
       })
       .catch(() => {})
-  }, [turns])
-
-  // ── Transcript handler — show live speech ──────────────────────────────────
-  const handleTranscript = useCallback((text: string) => {
-    if (!text.trim()) return
-    setInterimText(text)
   }, [])
 
+  // ── Transcript handler — update turn question real-time + isFinal => LLM -----
+  const handleTranscript = useCallback((text: string, isFinal?: boolean) => {
+    if (!text.trim()) return
+
+    // Luôn tạo/cập nhật turn — không return sớm (fix interim bug)
+    let id = activeTurnId.current
+    if (!id) {
+      suggestionCountRef.current = 0  // reset counter cho turn mới
+      id = addTurn(text)
+    } else {
+      // Update question — interim: debounce 150ms để tránh re-render quá nhiều
+      if (isFinal) {
+        updateTurnQuestion(id, text)
+        lastTranscriptRef.current = Date.now()
+      } else {
+        const now = Date.now()
+        if (now - lastTranscriptRef.current >= 150) {
+          updateTurnQuestion(id, text)
+          lastTranscriptRef.current = now
+        }
+      }
+    }
+
+    if (isFinal) {
+      // Translate the FINAL full question
+      translateText(text)
+        .then((vn) => {
+          setActiveModels(prev => ({ ...prev, translate: getLastTranslateModel() }))
+          setTurns(prev => prev.map(t => t.id === id ? { ...t, questionTranslation: vn } : t))
+        })
+        .catch(() => {})
+
+      const ctx = sessionData?.context ?? ''
+      const sid = sessionData?.sessionId
+      const myRevision = ++suggestionCountRef.current
+
+      if (myRevision === 1) {
+        // ── isFinal #1: STREAM real-time ──
+        streamBuffer.current = ''
+        streamCompletion(
+          text, ctx, 'copilot',
+          (chunk) => {
+            // Stale check: nếu có isFinal mới hơn, ignore chunk này
+            if (suggestionCountRef.current !== myRevision) return
+
+            streamBuffer.current += chunk
+            const lines = streamBuffer.current.split('\n')
+            streamBuffer.current = lines.pop() ?? ''
+            lines
+              .map(l => l.replace(/^[\s-\*\d\.]+/, '').trim())
+              .filter(Boolean)
+              .forEach(b => appendBullet(id, b))
+          },
+          undefined, // KHÔNG abort — turn cũ vẫn chạy, nhưng chunk bị ignore bởi stale check
+          sid,
+          [],
+        )
+        .then(() => {
+          // Flush buffer cuối sau khi stream kết thúc
+          if (suggestionCountRef.current !== myRevision) return
+          const rem = streamBuffer.current.replace(/^[\s-\*\d\.]+/, '').trim()
+          if (rem) appendBullet(id, rem)
+        })
+        .catch(() => {})
+      } else {
+        // ── isFinal #2+: NON-STREAMING, atomic replace ──
+        completeOnce(text, ctx, 'copilot', sid, [])
+          .then((fullAnswer) => {
+            // Stale check: nếu có isFinal mới hơn, bỏ qua response này
+            if (suggestionCountRef.current !== myRevision) return
+
+            const bullets = fullAnswer
+              .split('\n')
+              .map(l => l.replace(/^[\s-\*\d\.]+/, '').trim())
+              .filter(Boolean)
+
+            if (bullets.length > 0) {
+              // Atomic replace — không append, không blank, user không thấy downtime
+              setTurns(prev => prev.map(t => t.id === id ? { ...t, bullets } : t))
+            }
+          })
+          .catch(() => {})
+      }
+    }
+  }, [sessionData, addTurn, updateTurnQuestion, appendBullet])
+
   // ── UtteranceEnd → create turn + stream AI response ───────────────────────
-  const handleUtteranceEnd = useCallback(async (fullText: string) => {
+  const handleUtteranceEnd = useCallback((fullText: string) => {
     if (!fullText.trim()) return
 
-    abortRef.current?.abort()
-    abortRef.current = new AbortController()
-
-    setInterimText('')
-    const id = addTurn(fullText)
-
-    streamBuffer.current = ''
-
-    const ctx = sessionData?.context ?? ''
-    const sid = sessionData?.sessionId
-
-    try {
-      await streamCompletion(
-        fullText, ctx, 'copilot',
-        (chunk) => {
-          streamBuffer.current += chunk
-          const lines = streamBuffer.current.split('\n')
-          streamBuffer.current = lines.pop() ?? ''
-
-          lines
-            .map(l => l.replace(/^[\s\u2022\-\*\d\.]+/, '').trim())
-            .filter(Boolean)
-            .forEach(b => appendBullet(id, b))
-        },
-        abortRef.current.signal,
-        sid,
-        [],
-      )
-
-      // Flush remaining buffer
-      const rem = streamBuffer.current.replace(/^[\s\u2022\-\*\d\.]+/, '').trim()
-      if (rem) appendBullet(id, rem)
-    } catch {
-      // aborted or network error
-    } finally {
+    const id = activeTurnId.current
+    if (id) {
       finalizeTurn(id)
     }
-  }, [sessionData, addTurn, appendBullet, finalizeTurn])
+
+    activeTurnId.current = null
+  }, [finalizeTurn])
 
   // ── Manual question input — type a question, get AI suggestion ──────────────
   const handleManualSubmit = useCallback(async () => {
@@ -467,6 +530,10 @@ export function OverlayApp() {
     onError:        (e) => console.error('[Overlay]', e),
   })
 
+  // keep ref fresh for reconnect effect (useRef tru?c khi dùng trong effect ?? tránh stale closure)
+  const startRef = useRef(start)
+  startRef.current = start
+
   // ── IPC: session init ──────────────────────────────────────────────────────
   useEffect(() => {
     if (window.electronOverlay) {
@@ -499,6 +566,28 @@ export function OverlayApp() {
     return () => stop()
   }, [sessionData, mode]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Auto-reconnect với exponential backoff + max retries ─────────────────
+  const reconnectAttemptsRef = useRef(0)
+  const MAX_RECONNECT_ATTEMPTS = 8
+  useEffect(() => {
+    if ((status === 'idle' || status === 'error') && sessionData && mode !== 'practice') {
+      if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
+        console.log(`[Overlay] Max reconnect (${MAX_RECONNECT_ATTEMPTS}) reached, giving up`)
+        return
+      }
+      const delay = Math.min(2000 * Math.pow(1.5, reconnectAttemptsRef.current), 30000)
+      reconnectAttemptsRef.current++
+      console.log(`[Overlay] Reconnect #${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS} in ${Math.round(delay/1000)}s`)
+      const timer = setTimeout(() => startRef.current(), delay)
+      return () => clearTimeout(timer)
+    } else if (status === 'connected') {
+      if (reconnectAttemptsRef.current > 0) {
+        reconnectAttemptsRef.current = 0
+        console.log('[Overlay] Connected — reset retry counter')
+      }
+    }
+  }, [status, sessionData, mode])
+
   // ── Practice: trigger first turn once ──────────────────────────────────────
   useEffect(() => {
     if (mode === 'practice' && isActive && !practiceStarted && practicePrompt) {
@@ -510,19 +599,20 @@ export function OverlayApp() {
   // ── Keyboard shortcut: Space → Next (practice mode) ──────────────────────
   useEffect(() => {
     if (mode !== 'practice') return
-    if (turns.length === 0) return
-    const isGenerating = turns[turns.length - 1].isGenerating
 
     const handler = (e: KeyboardEvent) => {
-      // Skip Space shortcut when typing in an input field
-      if (e.code === 'Space' && !isGenerating && document.activeElement?.tagName !== 'INPUT') {
+      const t = turnsRef.current
+      if (t.length === 0) return
+      if (t[t.length - 1].isGenerating) return
+      if (document.activeElement?.tagName === 'INPUT') return
+      if (e.code === 'Space') {
         e.preventDefault()
         handlePracticeTurn('next')
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [mode, turns, handlePracticeTurn])
+  }, [mode, handlePracticeTurn])
 
   // ── Sync Electron window width with stored hubWidth on session start ────
   // Prevents desync where window is created at 440px but hubWidth (from
@@ -638,7 +728,7 @@ export function OverlayApp() {
     document.addEventListener('mouseup', onUp)
   }, [])
 
-  const hasContent = isActive && (turns.length > 0 || (mode === 'live' && !!interimText))
+  const hasContent = isActive && turns.length > 0
   const latestTurnIsGenerating = isActive && turns.length > 0 && turns[turns.length - 1].isGenerating
 
   return (
@@ -767,13 +857,7 @@ export function OverlayApp() {
               </div>
             )}
 
-            {/* Live interim caption — only in live mode */}
-            {mode === 'live' && interimText && (
-              <div className="hub-interim">
-                <span className="hub-interim__cursor" />
-                {interimText}
-              </div>
-            )}
+            {/* Interim caption removed — question updates real-time on turn card */}
           </div>
         )}
 

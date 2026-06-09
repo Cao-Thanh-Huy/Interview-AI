@@ -62,7 +62,6 @@ export const useInterviewStore = create<InterviewStore>()(
             ...s.turns.slice(-49),
             { id, question, timestamp: new Date().toISOString(), answer: '', isGenerating: true },
           ],
-          currentInterimCaption: '',
         }))
         return id
       },
