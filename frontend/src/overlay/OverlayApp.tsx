@@ -190,6 +190,8 @@ export function OverlayApp() {
   const hubHeightRef   = useRef(hubHeight)
   const turnsRef       = useRef(turns)
   const lastTranscriptRef = useRef(0)  // debounce interim transcript
+  const userHasScrolledUpRef = useRef(false)
+  const [showScrollButton, setShowScrollButton] = useState(false)
   const suggestionCountRef = useRef(0) // revision counter: isFinal #1 → stream, #2+ → once
 
   // Keep refs in sync
@@ -198,9 +200,17 @@ export function OverlayApp() {
   turnsRef.current = turns  // sync every render (no deps — runs every render)
 
   // ── Auto-scroll feed to bottom on new content (rAF-batched) ──────────────
+  //     If user scrolled up manually, pause auto-scroll + show ↓ button
   const scrollRafRef = useRef<number | null>(null)
   useEffect(() => {
     if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current)
+
+    // User đã scroll lên — không auto-scroll, hiện nút ↓ để họ chủ động quay lại
+    if (userHasScrolledUpRef.current) {
+      setShowScrollButton(true)
+      return
+    }
+
     scrollRafRef.current = requestAnimationFrame(() => {
       if (feedRef.current) {
         feedRef.current.scrollTop = feedRef.current.scrollHeight
@@ -352,6 +362,8 @@ export function OverlayApp() {
   }, [finalizeTurn])
 
   // ── Manual question input — type a question, get AI suggestion ──────────────
+  //     Non-streaming, không gửi sessionId → backend skip persist + summary.
+  //     Mỗi turn có ID riêng → không conflict với live flow.
   const handleManualSubmit = useCallback(async () => {
     const text = manualInput.trim()
     if (!text) return
@@ -359,44 +371,41 @@ export function OverlayApp() {
     setManualInput('')
     setManualError('')
 
-    abortRef.current?.abort()
-    abortRef.current = new AbortController()
+    // Tạo turn manual trực tiếp — KHÔNG addTurn (addTurn ghi đè activeTurnId + suggestionCountRef)
+    const manualId = Date.now().toString() + '-m'
+    setTurns(prev => [...prev, {
+      id: manualId, question: text, bullets: [], isGenerating: true,
+    }].slice(-10))
 
-    const id = addTurn(text)
-
-    streamBuffer.current = ''
+    // Dịch câu hỏi background — không gây block
+    translateText(text)
+      .then((vn) => {
+        setActiveModels(prev => ({ ...prev, translate: getLastTranslateModel() }))
+        setTurns(prev => prev.map(t => t.id === manualId ? { ...t, questionTranslation: vn } : t))
+      })
+      .catch(() => {})
 
     const ctx = sessionData?.context ?? ''
-    const sid = sessionData?.sessionId
 
     try {
-      await streamCompletion(
-        text, ctx, 'copilot',
-        (chunk) => {
-          streamBuffer.current += chunk
-          const lines = streamBuffer.current.split('\n')
-          streamBuffer.current = lines.pop() ?? ''
-
-          lines
-            .map(l => l.replace(/^[\s•\-\*\d\.]+/, '').trim())
-            .filter(Boolean)
-            .forEach(b => appendBullet(id, b))
-        },
-        abortRef.current.signal,
-        sid,
-        [],
-      )
-
-      const rem = streamBuffer.current.replace(/^[\s•\-\*\d\.]+/, '').trim()
-      if (rem) appendBullet(id, rem)
-    } catch (err: any) {
-      if (err?.name !== 'AbortError') {
-        setManualError(err?.message || 'Request failed')
+      // Non-streaming: hoàn toàn độc lập, không gửi sessionId
+      const answer = await completeOnce(text, ctx, 'copilot', undefined, [])
+      if (answer) {
+        // Parse answer thành bullets, set atomic 1 lần
+        const bullets = answer
+          .split('\n')
+          .map(l => l.replace(/^[\s•\-\*\d\.]+/, '').trim())
+          .filter(Boolean)
+        if (bullets.length > 0) {
+          setTurns(prev => prev.map(t => t.id === manualId ? { ...t, bullets } : t))
+        }
       }
+    } catch (err: any) {
+      setManualError(err?.message || 'Request failed')
     } finally {
-      finalizeTurn(id)
+      finalizeTurn(manualId)
     }
-  }, [manualInput, sessionData, addTurn, appendBullet, finalizeTurn])
+  }, [manualInput, sessionData, finalizeTurn])
 
   // ── TTS: speak text aloud ──────────────────────────────────────────────────
   const speakText = useCallback(async (text: string) => {
@@ -728,6 +737,23 @@ export function OverlayApp() {
     document.addEventListener('mouseup', onUp)
   }, [])
 
+  // ── Smart scroll: detect user-initiated scroll-up ──────────────────────
+  const handleFeedScroll = useCallback(() => {
+    const el = feedRef.current
+    if (!el) return
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+    userHasScrolledUpRef.current = !atBottom
+    if (atBottom) setShowScrollButton(false)
+  }, [])
+
+  const scrollToBottom = useCallback(() => {
+    if (feedRef.current) {
+      feedRef.current.scrollTop = feedRef.current.scrollHeight
+    }
+    userHasScrolledUpRef.current = false
+    setShowScrollButton(false)
+  }, [])
+
   const hasContent = isActive && turns.length > 0
   const latestTurnIsGenerating = isActive && turns.length > 0 && turns[turns.length - 1].isGenerating
 
@@ -835,7 +861,7 @@ export function OverlayApp() {
 
         {/* ── Scrollable turn feed ───────────────────────────────────────────── */}
         {hasContent && (
-          <div className="hub-feed" ref={feedRef}>
+          <div className="hub-feed" ref={feedRef} onScroll={handleFeedScroll}>
             {/* Past turns */}
             {turns.map((turn, i) => (
               <TurnCard
@@ -868,6 +894,13 @@ export function OverlayApp() {
           </div>
         )}
 
+        {/* ── Scroll-to-bottom button (floats above input row) ────────────── */}
+        {showScrollButton && (
+          <button className="hub-scroll-btn" onClick={scrollToBottom} title="Scroll to latest">
+            ↓
+          </button>
+        )}
+
         {/* ── Manual question input ───────────────────────────────────────────── */}
         {isActive && (
           <div className="hub-input-row">
@@ -883,12 +916,12 @@ export function OverlayApp() {
                 }
               }}
               placeholder={mode === 'practice' ? 'Ask a custom question...' : 'Type a question...'}
-              disabled={latestTurnIsGenerating}
+              disabled={mode === 'practice' && latestTurnIsGenerating}
             />
             <button
               className="hub-send-btn"
               onClick={() => { setManualError(''); handleManualSubmit() }}
-              disabled={!manualInput.trim() || latestTurnIsGenerating}
+              disabled={!manualInput.trim() || (mode === 'practice' && latestTurnIsGenerating)}
               title="Send"
             >
               ▶

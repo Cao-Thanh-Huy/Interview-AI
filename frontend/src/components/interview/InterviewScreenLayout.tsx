@@ -250,9 +250,32 @@ export function InterviewScreenLayout({ status, audioSource, audioLevel, startTi
   const feedRef = useRef<HTMLDivElement>(null)
   const [manualText, setManualText] = useState('')
   const lastTranscriptTimeRef = useRef(Date.now())
+  const userHasScrolledUpRef = useRef(false)
+  const [showScrollButton, setShowScrollButton] = useState(false)
 
-  // Auto-scroll to bottom on new turns
+  // ── Smart auto-scroll: pause when user scrolls up ────────────────────
+  const handleFeedScroll = useCallback(() => {
+    const el = feedRef.current
+    if (!el) return
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+    userHasScrolledUpRef.current = !atBottom
+    if (atBottom) setShowScrollButton(false)
+  }, [])
+
+  const scrollToBottom = useCallback(() => {
+    if (feedRef.current) {
+      feedRef.current.scrollTop = feedRef.current.scrollHeight
+    }
+    userHasScrolledUpRef.current = false
+    setShowScrollButton(false)
+  }, [])
+
+  // Auto-scroll to bottom on new turns — but NOT if user scrolled up
   useEffect(() => {
+    if (userHasScrolledUpRef.current) {
+      setShowScrollButton(true)
+      return
+    }
     if (feedRef.current) {
       feedRef.current.scrollTop = feedRef.current.scrollHeight
     }
@@ -325,16 +348,18 @@ export function InterviewScreenLayout({ status, audioSource, audioLevel, startTi
       />
 
       {/* Unified cognitive feed */}
-      <div
-        ref={feedRef}
-        className="contain"
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '20px 24px',
-          display: 'flex', flexDirection: 'column',
-        }}
-      >
+      <div style={{ flex: 1, position: 'relative' }}>
+        <div
+          ref={feedRef}
+          className="contain"
+          onScroll={handleFeedScroll}
+          style={{
+            position: 'absolute', inset: 0,
+            overflowY: 'auto',
+            padding: '20px 24px',
+            display: 'flex', flexDirection: 'column',
+          }}
+        >
         {turns.length === 0 && !currentInterimCaption && (
           <div style={{ margin: 'auto', textAlign: 'center', color: 'var(--muted)', fontSize: 13, lineHeight: 1.8 }}>
             <StatusDot status={status} />
@@ -369,6 +394,29 @@ export function InterviewScreenLayout({ status, audioSource, audioLevel, startTi
             </p>
           </>
         )}
+
+          {/* ── Scroll-to-bottom button ───────────────────────────────── */}
+          {showScrollButton && (
+            <button
+              onClick={scrollToBottom}
+              title="Scroll to latest"
+              style={{
+                position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)',
+                zIndex: 20, width: 32, height: 32, borderRadius: '50%',
+                border: '1px solid var(--line)',
+                background: 'var(--surface)',
+                color: 'var(--accent)',
+                fontSize: 16, lineHeight: 1,
+                cursor: 'pointer',
+                boxShadow: '0 2px 10px rgba(0,0,0,0.25)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'all 140ms',
+              }}
+            >
+              ↓
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Manual input strip */}

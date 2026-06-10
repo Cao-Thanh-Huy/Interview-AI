@@ -276,7 +276,7 @@ Only output the score block above — no intro, no commentary.`
     }
 
     // Update session summary
-    if (fullAnswer) {
+    if (sessionId && fullAnswer) {
       updateSessionSummary(rawTranscript, fullAnswer).catch((err) =>
         console.error('Session summary error:', err)
       )
@@ -320,7 +320,7 @@ Only output the score block above — no intro, no commentary.`
     }
 
     // Update session summary (fire & forget — không block response)
-    if (fullAnswer) {
+    if (sessionId && fullAnswer) {
       updateSessionSummary(transcript, fullAnswer).catch((err) =>
         console.error('Session summary error:', err)
       )
