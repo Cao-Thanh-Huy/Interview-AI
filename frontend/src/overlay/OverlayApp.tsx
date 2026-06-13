@@ -192,7 +192,7 @@ export function OverlayApp() {
   const lastTranscriptRef = useRef(0)  // debounce interim transcript
   const userHasScrolledUpRef = useRef(false)
   const [showScrollButton, setShowScrollButton] = useState(false)
-  const suggestionCountRef = useRef(0) // revision counter: isFinal #1 → stream, #2+ → once
+  const turnVersionRef = useRef<Record<string, number>>({}) // per-turn revision counter
 
   // Keep refs in sync
   useEffect(() => { hubWidthRef.current  = hubWidth  }, [hubWidth])
@@ -223,7 +223,7 @@ export function OverlayApp() {
   const addTurn = useCallback((question: string): string => {
     const id = Date.now().toString()
     activeTurnId.current = id
-    suggestionCountRef.current = 0  // reset counter cho turn mới
+    turnVersionRef.current[id] = 0  // init counter cho turn mới
     setTurns(prev => [...prev, { id, question, bullets: [], isGenerating: true }].slice(-10))
     // Translate question in background
     translateText(question)
@@ -270,7 +270,11 @@ export function OverlayApp() {
     // Luôn tạo/cập nhật turn — không return sớm (fix interim bug)
     let id = activeTurnId.current
     if (!id) {
-      suggestionCountRef.current = 0  // reset counter cho turn mới
+      // Clean up version counters for turns no longer in display (keep max 20)
+      const activeIds = new Set(turnsRef.current.slice(-20).map(t => t.id))
+      Object.keys(turnVersionRef.current).forEach(k => {
+        if (!activeIds.has(k)) delete turnVersionRef.current[k]
+      })
       id = addTurn(text)
     } else {
       // Update question — interim: debounce 150ms để tránh re-render quá nhiều
@@ -297,16 +301,23 @@ export function OverlayApp() {
 
       const ctx = sessionData?.context ?? ''
       const sid = sessionData?.sessionId
-      const myRevision = ++suggestionCountRef.current
+      // Per-turn version: increment every isFinal, used for stale check
+      const myVersion = (turnVersionRef.current[id] ?? 0) + 1
+      turnVersionRef.current[id] = myVersion
+            const staleCheck = () => turnVersionRef.current[id] !== myVersion
 
-      if (myRevision === 1) {
+      // Abort previous completion dể tránh connection storm + rate limit
+      abortRef.current?.abort()
+      const controller = new AbortController()
+      abortRef.current = controller
+
+      if (myVersion === 1) {
         // ── isFinal #1: STREAM real-time ──
         streamBuffer.current = ''
         streamCompletion(
           text, ctx, 'copilot',
           (chunk) => {
-            // Stale check: nếu có isFinal mới hơn, ignore chunk này
-            if (suggestionCountRef.current !== myRevision) return
+            if (staleCheck()) return
 
             streamBuffer.current += chunk
             const lines = streamBuffer.current.split('\n')
@@ -316,23 +327,24 @@ export function OverlayApp() {
               .filter(Boolean)
               .forEach(b => appendBullet(id, b))
           },
-          undefined, // KHÔNG abort — turn cũ vẫn chạy, nhưng chunk bị ignore bởi stale check
+          controller.signal, // Abort nếu có isFinal mới hon
           sid,
           [],
         )
         .then(() => {
-          // Flush buffer cuối sau khi stream kết thúc
-          if (suggestionCountRef.current !== myRevision) return
+          if (staleCheck()) return
           const rem = streamBuffer.current.replace(/^[\s-\*\d\.]+/, '').trim()
           if (rem) appendBullet(id, rem)
         })
-        .catch(() => {})
+        .catch((err) => {
+          if (err?.name === 'AbortError') return
+          console.error('[Overlay] streamCompletion error:', err)
+        })
       } else {
         // ── isFinal #2+: NON-STREAMING, atomic replace ──
-        completeOnce(text, ctx, 'copilot', sid, [])
+        completeOnce(text, ctx, 'copilot', sid, [], controller.signal)
           .then((fullAnswer) => {
-            // Stale check: nếu có isFinal mới hơn, bỏ qua response này
-            if (suggestionCountRef.current !== myRevision) return
+            if (staleCheck()) return
 
             const bullets = fullAnswer
               .split('\n')
@@ -340,11 +352,13 @@ export function OverlayApp() {
               .filter(Boolean)
 
             if (bullets.length > 0) {
-              // Atomic replace — không append, không blank, user không thấy downtime
               setTurns(prev => prev.map(t => t.id === id ? { ...t, bullets } : t))
             }
           })
-          .catch(() => {})
+          .catch((err) => {
+            if (err?.name === 'AbortError') return
+            console.error('[Overlay] completeOnce error:', err)
+          })
       }
     }
   }, [sessionData, addTurn, updateTurnQuestion, appendBullet])
@@ -388,8 +402,8 @@ export function OverlayApp() {
     const ctx = sessionData?.context ?? ''
 
     try {
-      // Non-streaming: hoàn toàn độc lập, không gửi sessionId
-      const answer = await completeOnce(text, ctx, 'copilot', undefined, [])
+      // Non-streaming: gửi sessionId để lưu vào history
+      const answer = await completeOnce(text, ctx, 'copilot', sessionData?.sessionId, [])
       if (answer) {
         // Parse answer thành bullets, set atomic 1 lần
         const bullets = answer

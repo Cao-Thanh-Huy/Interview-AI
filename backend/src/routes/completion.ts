@@ -275,19 +275,16 @@ Only output the score block above — no intro, no commentary.`
       }
     }
 
-    // Update session summary
-    if (sessionId && fullAnswer) {
-      updateSessionSummary(rawTranscript, fullAnswer).catch((err) =>
-        console.error('Session summary error:', err)
-      )
-    }
-
     return c.json({ answer: fullAnswer, model: liveModel })
   }
 
   return streamText(c, async (stream) => {
+    let aborted = false
+    stream.onAbort(() => { aborted = true })
+
     let buf = ''
     for await (const chunk of groqStream) {
+      if (aborted) break
       const raw = chunk.choices[0]?.delta?.content || ''
       fullAnswer += raw
       buf += raw
@@ -296,7 +293,6 @@ Only output the score block above — no intro, no commentary.`
       const openIdx = cleaned.lastIndexOf('<think>')
       const closeIdx = cleaned.lastIndexOf('</think>')
       if (openIdx > closeIdx) {
-        // Unclosed <think> ở cuối buffer → giữ lại
         buf = cleaned.slice(openIdx)
         cleaned = cleaned.slice(0, openIdx)
       } else {
@@ -304,6 +300,9 @@ Only output the score block above — no intro, no commentary.`
       }
       if (cleaned) await stream.write(cleaned)
     }
+
+    // Nếu client abort (isFinal mới hơn), không persist response partial
+    if (aborted) return
 
     // Persist turn to JSONL history
     if (sessionId) {

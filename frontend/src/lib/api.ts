@@ -60,11 +60,13 @@ export async function completeOnce(
   mode: CompletionMode,
   sessionId?: string,
   history?: HistoryTurn[],
+  signal?: AbortSignal,
 ): Promise<string> {
   const res = await fetch(`${BASE}/completion`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ transcript, context, mode, stream: false, sessionId, history }),
+    signal,
   })
 
   if (!res.ok) {

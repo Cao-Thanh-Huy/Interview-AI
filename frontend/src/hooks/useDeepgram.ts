@@ -218,13 +218,10 @@ export function useDeepgram({
 
             if (text.trim()) {
               if (data.is_final) {
-                // Tránh pendingTranscriptRef tích lũy vô hạn
-                if (pendingTranscriptRef.current.length > 500) {
-                  pendingTranscriptRef.current = text
-                } else {
-                  pendingTranscriptRef.current +=
-                    (pendingTranscriptRef.current ? ' ' : '') + text
-                }
+                // Accumulate tất cả text trong utterance — không giới hạn.
+                // UtteranceEnd clear pendingTranscriptRef về '' nên không lo tích lũy vô hạn.
+                pendingTranscriptRef.current +=
+                  (pendingTranscriptRef.current ? ' ' : '') + text
                 lastTranscriptTimeRef.current = Date.now()
                 onTranscript(pendingTranscriptRef.current, true)
               } else {
