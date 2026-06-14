@@ -93,14 +93,22 @@ async function createStreamWithFallback(
 ): Promise<{ stream: any; model: string }> {
   let lastErr: any
   for (const model of MODELS_PRIORITY) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 2000)
     try {
-      const stream = await getGroqClient().chat.completions.create({
-        messages, model, ...opts, stream: true,
-      })
+      const stream = await getGroqClient().chat.completions.create(
+        { messages, model, ...opts, stream: true },
+        { signal: controller.signal },
+      )
+      clearTimeout(timer)
       return { stream, model }
     } catch (err: any) {
+      clearTimeout(timer)
       lastErr = err
-      console.warn(`[Live] ⚠️ ${model} failed: ${(err?.message || err?.status || '').slice(0, 80)} → fallback`)
+      const reason = err?.name === 'AbortError'
+        ? 'timeout (2s)'
+        : (err?.message || err?.status || '').slice(0, 60)
+      console.warn(`[Live] ⚠️ ${model} ${reason} → fallback`)
       continue
     }
   }
@@ -120,7 +128,7 @@ completionRouter.post('/translate', async (c) => {
         { role: 'user', content: `Translate to Vietnamese:\n"${text}"` },
       ],
       MODELS_TRANSLATE,
-      { temperature: 0.3, max_tokens: 200 },
+      { temperature: 0.3 },
     )
     return c.json({ translation: r.content, model: r.model })
   } catch (err: any) {
@@ -241,7 +249,8 @@ Only output the score block above — no intro, no commentary.`
 
   let groqStream, liveModel = '70B'
   try {
-    const result = await createStreamWithFallback(messages, { temperature: 0.2, max_tokens: 160 })
+    const dynamicMaxTokens = Math.min(160 + Math.floor(transcript.length / 10), 512)
+    const result = await createStreamWithFallback(messages, { temperature: 0.2, max_tokens: dynamicMaxTokens })
     groqStream = result.stream
     liveModel = result.model
   } catch (err: any) {

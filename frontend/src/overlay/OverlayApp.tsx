@@ -225,13 +225,6 @@ export function OverlayApp() {
     activeTurnId.current = id
     turnVersionRef.current[id] = 0  // init counter cho turn mới
     setTurns(prev => [...prev, { id, question, bullets: [], isGenerating: true }].slice(-10))
-    // Translate question in background
-    translateText(question)
-      .then((vn) => {
-        setActiveModels(prev => ({ ...prev, translate: getLastTranslateModel() }))
-        setTurns(prev => prev.map(t => t.id === id ? { ...t, questionTranslation: vn } : t))
-      })
-      .catch(() => {})
     return id
   }, [])
 
@@ -572,6 +565,9 @@ export function OverlayApp() {
           setPracticeStarted(false)
         } else {
           setMode('live')
+          setTurns([])
+          setManualInput('')
+          setManualError('')
         }
       })
       return cleanup
@@ -662,11 +658,13 @@ export function OverlayApp() {
     abortRef.current?.abort()
     stop()
     window.electronOverlay?.stop()
+    setSessionData(null)
+    setIsActive(false)
+    setTurns([])
+    setManualInput('')
+    setManualError('')
     if (mode === 'practice') {
       setPracticeStarted(false)
-      setMode('live')
-      setSessionData(null)  // Prevent Deepgram start on hidden overlay
-      setTurns([])
       setPracticeError('')
       setPracticeContext('')
       setPracticeSessionId('')

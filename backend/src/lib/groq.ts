@@ -24,10 +24,10 @@ export const GROQ_MODEL_SUMMARY = 'qwen/qwen3-32b'
 
 /** REALTIME ANSWER (Question + Suggestion) */
 export const MODELS_PRIORITY = [
-  'llama-3.3-70b-versatile',
   'llama-3.1-8b-instant',
-  'openai/gpt-oss-20b',
+  'llama-3.3-70b-versatile',
   'openai/gpt-oss-120b',
+  'openai/gpt-oss-20b',
   'allam-2-7b',
 ]
 
@@ -94,11 +94,12 @@ export async function callWithFallback(
 
   for (const model of models) {
     try {
-      const r = await getGroqClient().chat.completions.create({
+      const groqParams: any = {
         messages, model,
         temperature: opts.temperature ?? 0.6,
-        max_tokens: opts.max_tokens ?? 300,
-      })
+      }
+      if (opts.max_tokens !== undefined) groqParams.max_tokens = opts.max_tokens
+      const r = await getGroqClient().chat.completions.create(groqParams)
       let content = r.choices[0]?.message?.content?.trim() || ''
       content = stripReasoning(content)
       if (content) {
