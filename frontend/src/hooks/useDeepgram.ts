@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchDeepgramKey } from '@/lib/api'
-import type { DeepgramStatus, AudioSource } from '@/lib/types'
+import type { DeepgramStatus } from '@/lib/types'
 
 interface UseDeepgramOptions {
+  stream: MediaStream | null       // từ useAudioCapture, persistent
   onTranscript: (text: string, isFinal: boolean) => void
   onUtteranceEnd: (fullTranscript: string) => void
   onStatusChange?: (status: DeepgramStatus) => void
@@ -10,31 +11,41 @@ interface UseDeepgramOptions {
   onWarning?: (message: string) => void
 }
 
+interface UseDeepgramReturn {
+  start: () => Promise<void>
+  stop: () => void
+  status: DeepgramStatus
+  isMuted: boolean
+  toggleMute: () => void
+  closeWasClean: boolean  // true nếu WS đóng sạch ko transcript → ko reconnect
+}
+
 export function useDeepgram({
+  stream,
   onTranscript,
   onUtteranceEnd,
   onStatusChange,
   onError,
-}: UseDeepgramOptions) {
+}: UseDeepgramOptions): UseDeepgramReturn {
   const [status, setStatus] = useState<DeepgramStatus>('idle')
-  const [audioSource, setAudioSource] = useState<AudioSource>(null)
   const [isMuted, setIsMuted] = useState(false)
-  const [audioLevel, setAudioLevel] = useState(0)  // 0-100 integer
+  const [closeWasClean, setCloseWasClean] = useState(false)  // true nếu WS đóng sạch ko transcript
 
   const wsRef = useRef<WebSocket | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
-  const audioStreamRef = useRef<MediaStream | null>(null)
   const audioQueueRef = useRef<Blob[]>([])
   const isProcessingRef = useRef(false)
   const pendingTranscriptRef = useRef('')
   const isMutedRef = useRef(false)
   const keepAliveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const connectionIdRef = useRef(0)
-  const analyserRef = useRef<AnalyserNode | null>(null)
-  const levelTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const audioCtxRef = useRef<AudioContext | null>(null)
   const lastTranscriptTimeRef = useRef(Date.now())
   const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const startRef = useRef<(() => Promise<void>) | null>(null)
+  const isStoppedRef = useRef(true)
+  const watchdogRestartCountRef = useRef(0)
+  const MAX_WATCHDOG_RESTARTS = 1
+  const closeWasCleanRef = useRef(false)  // true nếu WS đóng sạch (code 1000/1005) ko có transcript
 
   const updateStatus = useCallback(
     (s: DeepgramStatus) => {
@@ -44,43 +55,7 @@ export function useDeepgram({
     [onStatusChange],
   )
 
-  // ── Audio level analyser ────────────────────────────────────────────────────
-  const startLevelMeter = useCallback((stream: MediaStream) => {
-    try {
-      const ctx = new AudioContext()
-      audioCtxRef.current = ctx
-      // Resume is required — Chromium may suspend AudioContext without user gesture
-      ctx.resume().then(() => console.log('[Audio] AudioContext state:', ctx.state))
-      const source = ctx.createMediaStreamSource(stream)
-      const analyser = ctx.createAnalyser()
-      analyser.fftSize = 256
-      analyser.smoothingTimeConstant = 0.4
-      source.connect(analyser)
-      analyserRef.current = analyser
-
-      const buf = new Uint8Array(analyser.frequencyBinCount)
-      const tick = () => {
-        analyser.getByteFrequencyData(buf)
-        const avg = buf.reduce((s, v) => s + v, 0) / buf.length
-        setAudioLevel(Math.round(avg))
-      }
-      levelTimerRef.current = setInterval(tick, 200)
-    } catch {
-      // AudioContext not supported — ignore
-    }
-  }, [])
-
-  const stopLevelMeter = useCallback(() => {
-    if (levelTimerRef.current) {
-      clearInterval(levelTimerRef.current)
-      levelTimerRef.current = null
-    }
-    analyserRef.current = null
-    audioCtxRef.current?.close().catch(() => { })
-    audioCtxRef.current = null
-    setAudioLevel(0)
-  }, [])
-
+  // ── Audio queue flush ────────────────────────────────────────────────────
   const flushAudioQueue = useCallback(() => {
     if (
       !wsRef.current ||
@@ -91,7 +66,9 @@ export function useDeepgram({
       return
 
     isProcessingRef.current = true
+    const genId = connectionIdRef.current  // capture generation để tránh stale timeout
     const blob = audioQueueRef.current.shift()!
+    console.log('[Deepgram] Sending blob size:', blob.size, 'wsReady:', wsRef.current?.readyState, 'gen:', genId)
 
     try {
       wsRef.current.send(blob)
@@ -101,10 +78,16 @@ export function useDeepgram({
 
     setTimeout(() => {
       isProcessingRef.current = false
+      // Nếu connectionId thay đổi (session mới), ko recurse — tránh stale timeout
+      if (connectionIdRef.current !== genId) {
+        console.log('[Deepgram] Stale flush timeout skipped (gen changed)')
+        return
+      }
       flushAudioQueue()
     }, 250)
   }, [])
 
+  // ── Open WebSocket + MediaRecorder ──────────────────────────────────────
   const openWebSocket = useCallback(
     async (audioStream: MediaStream, currentId: number) => {
       updateStatus('connecting')
@@ -113,14 +96,13 @@ export function useDeepgram({
       try {
         const result = await fetchDeepgramKey()
         if (currentId !== connectionIdRef.current) {
-          audioStream.getTracks().forEach((t) => t.stop())
+          // Stale — chỉ return, ko stop stream (useAudioCapture quản lý)
           return
         }
         key = result.key
         console.log('[Deepgram] Key ready, length:', key?.length)
       } catch (err) {
         if (currentId !== connectionIdRef.current) {
-          audioStream.getTracks().forEach((t) => t.stop())
           return
         }
         onError?.(`Failed to get API key: ${(err as Error).message}`)
@@ -128,7 +110,7 @@ export function useDeepgram({
         return
       }
 
-      // Pick the best supported audio MIME type (opus preferred, fallback to pcm via wav)
+      // Pick best supported audio MIME
       const preferredMime = [
         'audio/webm;codecs=opus',
         'audio/webm',
@@ -143,29 +125,31 @@ export function useDeepgram({
         utterance_end_ms: '3500',
         vad_events: 'true',
         endpointing: '800',
-        // Tell Deepgram the exact container/codec so it doesn't have to guess
-        // Only send encoding for streaming (container is for pre-recorded, not WebSocket)
-        ...(preferredMime.includes('opus') ? { encoding: 'opus' } : {}),
+        encoding: 'opus',  // BẮT BUỘC cho streaming WebSocket
       })
 
       const wsUrl = `wss://api.deepgram.com/v1/listen?${params}`
-      console.log('[Deepgram] Connecting to Deepgram WebSocket...')
+      console.log('[Deepgram] WS URL:', wsUrl)
       const ws = new WebSocket(wsUrl, ['token', key])
       wsRef.current = ws
+
+      // Biến ở scope openWebSocket — các handler đều truy cập được
+      let gotTranscript = false
+      let transcriptTimer: ReturnType<typeof setTimeout> | null = null
 
       ws.onopen = () => {
         console.log('[Deepgram] WebSocket opened ✅ — readyState:', ws.readyState)
         updateStatus('connected')
 
-        // Start level meter
-        startLevelMeter(audioStream)
-
+        // Tạo MediaRecorder từ audioStream có sẵn (ko acquire lại)
         const recorderOptions = preferredMime ? { mimeType: preferredMime } : {}
         const recorder = new MediaRecorder(audioStream, recorderOptions)
         recorderRef.current = recorder
 
         let chunkCount = 0
         recorder.ondataavailable = (e) => {
+          // Nếu recorder này ko còn là recorder hiện tại → stale event từ session cũ
+          if (recorderRef.current !== recorder) return
           chunkCount++
           if (chunkCount <= 5 || chunkCount % 20 === 0) {
             console.log(`[Audio] Chunk #${chunkCount} size=${e.data.size} bytes, muted=${isMutedRef.current}`)
@@ -180,32 +164,51 @@ export function useDeepgram({
         console.log('[Audio] MediaRecorder started, mimeType:', recorder.mimeType)
 
         recorder.onerror = () => {
-          console.error('[Audio] MediaRecorder error ❌ — triggering reconnect')
+          console.error('[Audio] MediaRecorder error ❌')
           recorder.stop()
           wsRef.current?.close()
           updateStatus('idle')
         }
         recorder.onstop = () => {
           console.log('[Audio] MediaRecorder stopped')
-          // Chỉ null nếu recorder này vẫn là recorder hiện tại (tránh race với start())
+          // Clear queue — ondataavailable cuối cùng có thể fire async sau stop()
+          // Chỉ clear khi recorder này là recorder hiện tại (tránh clear queue của session mới)
           if (recorderRef.current === recorder) {
+            audioQueueRef.current = []
             recorderRef.current = null
           }
         }
 
-        // Watchdog: phát hiện zombie connection (WS open nhưng không có transcript)
+        // Watchdog: zombie connection (120s no transcript)
         if (watchdogRef.current) clearInterval(watchdogRef.current)
         lastTranscriptTimeRef.current = Date.now()
         watchdogRef.current = setInterval(() => {
           const elapsed = Date.now() - lastTranscriptTimeRef.current
           if (elapsed > 120000) {
-            console.warn(`[Watchdog] No transcript for ${Math.round(elapsed/1000)}s — reconnecting...`)
+            console.warn(`[Watchdog] No transcript for ${Math.round(elapsed / 1000)}s — reconnecting...`)
             recorderRef.current?.stop()
             wsRef.current?.close()
             updateStatus('idle')
           }
         }, 10000)
-      }
+
+        // Transcript silence watchdog (25s từ khi WS mở)
+        gotTranscript = false
+        transcriptTimer = setTimeout(() => {
+          if (gotTranscript || !startRef.current || isStoppedRef.current) return
+          if (watchdogRestartCountRef.current >= MAX_WATCHDOG_RESTARTS) {
+            console.warn(`[Deepgram] Max restarts (${MAX_WATCHDOG_RESTARTS}) reached. Audio may be silent.`)
+            onError?.('Audio capture failed after retries.')
+            return
+          }
+          watchdogRestartCountRef.current++
+          console.warn(`[Deepgram] No transcript in 25s (${watchdogRestartCountRef.current}/${MAX_WATCHDOG_RESTARTS}) — restarting WebSocket...`)
+          recorderRef.current?.stop()
+          ws.close()
+          // Chỉ restart WS — stream vẫn còn, ko acquire lại audio
+          setTimeout(() => startRef.current?.(), 1000)
+        }, 25000)
+      } // end ws.onopen
 
       ws.onmessage = (e) => {
         try {
@@ -217,9 +220,10 @@ export function useDeepgram({
             const text = words.map((w) => w.punctuated_word ?? w.word).join(' ')
 
             if (text.trim()) {
+              gotTranscript = true
+              clearTimeout(transcriptTimer)
+
               if (data.is_final) {
-                // Accumulate tất cả text trong utterance — không giới hạn.
-                // UtteranceEnd clear pendingTranscriptRef về '' nên không lo tích lũy vô hạn.
                 pendingTranscriptRef.current +=
                   (pendingTranscriptRef.current ? ' ' : '') + text
                 lastTranscriptTimeRef.current = Date.now()
@@ -239,15 +243,19 @@ export function useDeepgram({
               pendingTranscriptRef.current = ''
               onTranscript('', true)
             }
+          } else {
+            // Log ALL messages để debug Session 2+ không transcript
+            console.log('[Deepgram] Raw message type:', data.type, JSON.stringify(data).slice(0, 300))
           }
         } catch (err) {
-          console.error('Error parsing Deepgram message:', err)
+          const preview = typeof e.data === 'string' ? e.data.slice(0, 200) : String(e.data).slice(0, 200)
+          console.error('Error parsing Deepgram message:', err, '| raw:', preview)
         }
       }
 
       ws.onclose = (event) => {
         console.log(`[Deepgram] WebSocket closed — code: ${event.code}, reason: ${event.reason || '(no reason)'}, wasClean: ${event.wasClean}`)
-        // Bỏ qua nếu đây là WebSocket cũ (tránh race với start() mới)
+        clearTimeout(transcriptTimer)
         if (currentId !== connectionIdRef.current) {
           console.log('[Deepgram] Ignoring stale WS close event')
           return
@@ -257,162 +265,59 @@ export function useDeepgram({
           watchdogRef.current = null
         }
         const isNormal = event.code === 1000 || event.code === 1005
+        const wasClean = isNormal && !gotTranscript
+        closeWasCleanRef.current = wasClean
+        if (wasClean) setCloseWasClean(true)
         if (!isNormal && event.code !== 0) {
           onError?.(`Connection closed unexpectedly (code: ${event.code})`)
         }
-        stopLevelMeter()
         updateStatus('idle')
         recorderRef.current?.stop()
       }
 
       ws.onerror = (err) => {
         console.error('[Deepgram] WebSocket error ❌:', err)
+        clearTimeout(transcriptTimer)
         if (currentId !== connectionIdRef.current) {
           console.log('[Deepgram] Ignoring stale WS error')
           return
         }
         onError?.('WebSocket error. Check your API key and network connection.')
-        stopLevelMeter()
         updateStatus('error')
       }
     },
-    [updateStatus, flushAudioQueue, onTranscript, onUtteranceEnd, onError, startLevelMeter, stopLevelMeter],
+    [updateStatus, flushAudioQueue, onTranscript, onUtteranceEnd, onError],
   )
 
-  const start = useCallback(async (deviceId?: string) => {
+  // ── Start — chỉ connect WS, ko acquire audio ────────────────────────────
+  const start = useCallback(async () => {
+    if (!stream) {
+      console.warn('[Deepgram] start() called but no stream available')
+      return
+    }
+
+    isStoppedRef.current = false
+    closeWasCleanRef.current = false
+    setCloseWasClean(false)
     const currentId = ++connectionIdRef.current
-    let audioStream: MediaStream | null = null
+    await openWebSocket(stream, currentId)
+  }, [stream, openWebSocket])
 
-    const isElectron = !!(window as unknown as { electronAudio?: unknown }).electronAudio
+  // Sync ref để watchdog restart có thể gọi start()
+  startRef.current = start
 
-    // ── Tier 1: WASAPI loopback via Electron (works on ANY Windows machine) ─────
-    // Main process setDisplayMediaRequestHandler intercepts getDisplayMedia:
-    //   video → WebFrameMain  (Chromium-internal compositing, ZERO DXGI)
-    //   audio → 'loopback'    (Windows WASAPI render endpoint, built into all Windows)
-    if (isElectron && !deviceId) {
-      // Tier 1a: Try getDisplayMedia directly (works when there's a user gesture)
-      try {
-        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true })
-        if (currentId !== connectionIdRef.current) { stream.getTracks().forEach(t => t.stop()); return }
-        stream.getVideoTracks().forEach(t => t.stop())
-        const tracks = stream.getAudioTracks()
-        console.log(`[Audio] getDisplayMedia returned ${tracks.length} audio track(s)`, tracks.map(t => t.label))
-        if (tracks.length > 0) {
-          audioStream = new MediaStream(tracks)
-          setAudioSource('system')
-          console.log('[Audio] ✅ WASAPI loopback active (Tier 1a — getDisplayMedia)')
-        } else {
-          console.warn('[Audio] ⚠️ Tier 1a: 0 audio tracks — WASAPI returned no audio, falling to Tier 1b')
-        }
-      } catch (err) {
-        if (currentId !== connectionIdRef.current) return
-        console.warn('[Audio] ⚠️ Tier 1a getDisplayMedia blocked (likely no user gesture in overlay):', err)
-      }
-
-      // Tier 1b: IPC-based capture — main process grabs source ID (bypasses user-gesture requirement)
-      if (!audioStream) {
-        try {
-          const electronAudio = (window as unknown as { electronAudio?: { requestDisplayCapture: () => Promise<string | null> } }).electronAudio
-          const sourceId = await electronAudio?.requestDisplayCapture()
-          if (currentId !== connectionIdRef.current) return
-          console.log('[Audio] Tier 1b: sourceId from IPC =', sourceId)
-          if (sourceId) {
-            const stream = await navigator.mediaDevices.getUserMedia({
-              audio: {
-                // @ts-expect-error — Electron/Chromium-specific constraint
-                mandatory: {
-                  chromeMediaSource: 'desktop',
-                  chromeMediaSourceId: sourceId,
-                },
-              },
-              video: false,
-            })
-            if (currentId !== connectionIdRef.current) { stream.getTracks().forEach(t => t.stop()); return }
-            const tracks = stream.getAudioTracks()
-            console.log(`[Audio] Tier 1b getUserMedia tracks: ${tracks.length}`, tracks.map(t => t.label))
-            if (tracks.length > 0) {
-              audioStream = new MediaStream(tracks)
-              setAudioSource('system')
-              console.log('[Audio] ✅ WASAPI loopback active (Tier 1b — IPC chromeMediaSource)')
-            }
-          }
-        } catch (err) {
-          if (currentId !== connectionIdRef.current) return
-          console.warn('[Audio] ❌ Tier 1b IPC capture failed:', err)
-        }
-      }
-    }
-
-    // ── Tier 2: Stereo Mix / VB-Cable auto-detection ──────────────────────────
-    if (!audioStream && !deviceId) {
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices()
-        const loopback = devices.find(d =>
-          d.kind === 'audioinput' &&
-          /stereo mix|what u hear|wave out mix|loopback|vb-audio|vb-cable|cable output/i.test(d.label)
-        )
-        if (loopback) {
-          audioStream = await navigator.mediaDevices.getUserMedia({
-            audio: { deviceId: { exact: loopback.deviceId } }, video: false,
-          })
-          if (currentId !== connectionIdRef.current) { audioStream.getTracks().forEach(t => t.stop()); return }
-          setAudioSource('system')
-          console.log('[Audio] Loopback device (Tier 2):', loopback.label)
-        }
-      } catch (err) {
-        if (currentId !== connectionIdRef.current) return
-        console.warn('[Audio] Tier 2 Stereo Mix failed:', err)
-      }
-    }
-
-    // ── Tier 3: Caller-specified deviceId (manual selection) ──────────────────
-    if (!audioStream && deviceId) {
-      try {
-        audioStream = await navigator.mediaDevices.getUserMedia({
-          audio: { deviceId: { exact: deviceId } }, video: false,
-        })
-        if (currentId !== connectionIdRef.current) { audioStream.getTracks().forEach(t => t.stop()); return }
-        setAudioSource('system')
-        console.log('[Audio] Specified device (Tier 3):', deviceId)
-      } catch (err) {
-        if (currentId !== connectionIdRef.current) return
-        console.warn('[Audio] Tier 3 specified device failed:', err)
-      }
-    }
-
-    // ── Tier 4: Default microphone fallback ───────────────────────────────────
-    if (!audioStream) {
-      try {
-        audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-        if (currentId !== connectionIdRef.current) { audioStream.getTracks().forEach(t => t.stop()); return }
-        setAudioSource('microphone')
-        console.log('[Audio] Default microphone (Tier 4 fallback)')
-      } catch (err) {
-        const error = err as Error
-        if (currentId !== connectionIdRef.current) return
-        onError?.(`Audio capture failed: ${error.message}`)
-        updateStatus('idle')
-        return
-      }
-    }
-
-    audioStreamRef.current = audioStream
-    await openWebSocket(audioStream, currentId)
-  }, [openWebSocket, onError, updateStatus]) // eslint-disable-line react-hooks/exhaustive-deps
-
+  // ── Toggle mute ──────────────────────────────────────────────────────────
   const toggleMute = useCallback(() => {
     const next = !isMutedRef.current
     isMutedRef.current = next
     setIsMuted(next)
     if (next) {
-      // Muted: send KeepAlive every 8s so Deepgram doesn't timeout with code 1011
       keepAliveIntervalRef.current = setInterval(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
           wsRef.current.send(JSON.stringify({ type: 'KeepAlive' }))
         }
       }, 8000)
     } else {
-      // Unmuted: stop keep-alive, discard blobs recorded while muted
       if (keepAliveIntervalRef.current) {
         clearInterval(keepAliveIntervalRef.current)
         keepAliveIntervalRef.current = null
@@ -421,8 +326,12 @@ export function useDeepgram({
     }
   }, [])
 
+  // ── Stop — chỉ close WS + recorder, KO stop audio stream ────────────────
   const stop = useCallback(() => {
+    isStoppedRef.current = true
+    watchdogRestartCountRef.current = 0
     connectionIdRef.current++
+
     if (keepAliveIntervalRef.current) {
       clearInterval(keepAliveIntervalRef.current)
       keepAliveIntervalRef.current = null
@@ -431,33 +340,35 @@ export function useDeepgram({
       clearInterval(watchdogRef.current)
       watchdogRef.current = null
     }
+
     isMutedRef.current = false
 
-    stopLevelMeter()
+    // Close WS TRƯỚC recorder — ngăn recorder's final ondataavailable
+    // gửi blob qua WS cũ (gây stale blob ở Session 2+)
+    wsRef.current?.close()
+    wsRef.current = null
 
     recorderRef.current?.stop()
     recorderRef.current = null
 
-    wsRef.current?.close()
-    wsRef.current = null
+    // KHÔNG stop stream — useAudioCapture quản lý
+    // KHÔNG stop level meter — useAudioCapture quản lý
 
-    audioStreamRef.current?.getTracks().forEach((t) => t.stop())
-    audioStreamRef.current = null
-
-    setAudioSource(null)
     pendingTranscriptRef.current = ''
     audioQueueRef.current = []
     isProcessingRef.current = false
 
     updateStatus('idle')
-  }, [updateStatus, stopLevelMeter])
+  }, [updateStatus])
 
-  // Cleanup on unmount only.
-  // Using [] instead of [stop] prevents the cleanup from re-running every time
-  // stop() reference changes (which happens when updateStatus/onStatusChange re-creates).
-  // Safe because stop() only accesses refs (wsRef, recorderRef...) which are always current.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => () => stop(), [])
+  // Cleanup on unmount — KHÔNG dùng [stop] vì stop thay đổi theo mỗi render
+  // (onStatusChange inline → updateStatus mới → stop mới), gây cleanup chạy liên tục
+  // → connectionIdRef++ mỗi lần → fetchDeepgramKey bị stale check → stop audio stream
+  const stopRef = useRef(stop)
+  stopRef.current = stop
+  useEffect(() => () => {
+    stopRef.current()
+  }, [])
 
-  return { start, stop, status, audioSource, isMuted, toggleMute, audioLevel }
+  return { start, stop, status, isMuted, toggleMute, closeWasClean }
 }

@@ -52,7 +52,7 @@ function MicOrb() {
 }
 
 // ─── Setup Tab ────────────────────────────────────────────────────────────────
-function SetupTab({ onStart, isStarting }: { onStart: () => void; isStarting: boolean }) {
+function SetupTab({ onStart, isStarting, isOverlayBusy }: { onStart: () => void; isStarting: boolean; isOverlayBusy: boolean }) {
   const [apiOk, setApiOk] = useState<boolean | null>(null)
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([])
   const audioDeviceId = useInterviewStore((s) => s.audioDeviceId)
@@ -105,7 +105,7 @@ function SetupTab({ onStart, isStarting }: { onStart: () => void; isStarting: bo
 
   // In Electron: WASAPI loopback handles audio automatically — no device required
   // In browser: require explicit device selection (no loopback available otherwise)
-  const canStart = isStarting === false && apiOk !== false && (isElectron || !!audioDeviceId)
+  const canStart = isStarting === false && isOverlayBusy === false && apiOk !== false && (isElectron || !!audioDeviceId)
 
   const isLoopback = (label: string) =>
     /stereo mix|what u hear|cable output|vb-audio|blackhole|loopback/i.test(label)
@@ -219,7 +219,7 @@ function SetupTab({ onStart, isStarting }: { onStart: () => void; isStarting: bo
           transition: 'box-shadow 150ms ease-out, background 150ms ease-out',
         }}
       >
-        {isStarting ? 'Starting…' : 'Start Session →'}
+        {isOverlayBusy ? 'Waiting…' : isStarting ? 'Starting…' : 'Start Session →'}
       </button>
 
       {/* Hint */}
@@ -251,6 +251,18 @@ export function SetupScreen() {
   const [isStarting,   setIsStarting]   = useState(false)
   const [activeTab,    setActiveTab]    = useState<SidebarTab>('setup')
   const [showSettings, setShowSettings] = useState(false)
+  const [isOverlayBusy, setIsOverlayBusy] = useState(false)
+
+  // Listen for overlay stop status (disable Start button while stopping)
+  useEffect(() => {
+    const es = (window as unknown as { electronSession?: { onStopStatus?: (cb: (s: string) => void) => () => void } }).electronSession
+    if (!es?.onStopStatus) return
+    const cleanup = es.onStopStatus((status: string) => {
+      setIsOverlayBusy(status === 'stopping')
+      if (status === 'ready') setIsStarting(false)
+    })
+    return cleanup
+  }, [])
 
   const handleStart = () => {
     setIsStarting(true)
@@ -305,7 +317,7 @@ export function SetupScreen() {
           className="animate-panel contain"
           style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}
         >
-          {activeTab === 'setup'    && <SetupTab onStart={handleStart} isStarting={isStarting} />}
+          {activeTab === 'setup'    && <SetupTab onStart={handleStart} isStarting={isStarting} isOverlayBusy={isOverlayBusy} />}
           {activeTab === 'profile'  && <ProfilePanel />}
           {activeTab === 'history'  && <HistoryReviewPanel />}
           {activeTab === 'practice' && <PracticePanel />}

@@ -196,24 +196,23 @@ async function createWindow() {
     const logPath = path.join(ROOT, 'renderer.log')
     const logStream = fs.createWriteStream(logPath, { flags: 'w' })
     const stamp = () => new Date().toISOString().slice(11, 23)
-    mainWindow.webContents.on('console-message', (_e, level, msg, line, src) => {
+    globalThis.__addRendererLog = (winName, level, msg, line, src) => {
       const lvl = ['verbose', 'info', 'warn', 'error'][level] ?? 'log'
       const shortSrc = src ? src.replace(/.*\//, '') : ''
-      const entry = `[${stamp()}] [${lvl.toUpperCase()}] ${msg}  (${shortSrc}:${line})\n`
+      const entry = `[${stamp()}] [${winName}] [${lvl.toUpperCase()}] ${msg}  (${shortSrc}:${line})\n`
       logStream.write(entry)
-      console.log('[Renderer]', entry.trim())
+      console.log(`[${winName}]`, entry.trim())
+    }
+    mainWindow.webContents.on('console-message', (_e, level, msg, line, src) => {
+      globalThis.__addRendererLog('Main', level, msg, line, src)
     })
     mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
-      const msg = `[${stamp()}] [FAIL-LOAD] code=${code} desc=${desc} url=${url}\n`
-      logStream.write(msg)
-      console.error('[Renderer]', msg.trim())
+      logStream.write(`[${stamp()}] [Main] [FAIL-LOAD] code=${code} desc=${desc} url=${url}\n`)
     })
     mainWindow.webContents.on('render-process-gone', (_e, details) => {
-      const msg = `[${stamp()}] [CRASH] reason=${details.reason} exitCode=${details.exitCode}\n`
-      logStream.write(msg)
-      console.error('[Renderer]', msg.trim())
+      logStream.write(`[${stamp()}] [Main] [CRASH] reason=${details.reason} exitCode=${details.exitCode}\n`)
     })
-    console.log('[Electron] Renderer logs → renderer.log | Remote debug → http://localhost:9222')
+    console.log('[Electron] Logs → renderer.log | Remote debug → http://localhost:9222')
   }
 
   // DevTools: open manually with Ctrl+Shift+I if needed
@@ -323,6 +322,13 @@ async function createOverlay() {
       overlayWindow.webContents.send('overlay:window-resized', w)
     }
   })
+
+  // Capture overlay console logs (dev only)
+  if (isDev && globalThis.__addRendererLog) {
+    overlayWindow.webContents.on('console-message', (_e, level, msg, line, src) => {
+      globalThis.__addRendererLog('Overlay', level, msg, line, src)
+    })
+  }
 
   // When overlay finishes loading, flush any buffered session data
   overlayWindow.webContents.on('did-finish-load', () => {
@@ -457,8 +463,7 @@ ipcMain.handle('audio:get-desktop-source-id', async () => {
 ipcMain.on('session:start', (_, data) => {
   if (!overlayWindow) return
 
-  // Sync overlay window width with stored hubWidth before showing
-  // Prevents CSS/viewport desync (e.g. hubWidth=512 but window=440)
+  // Sync overlay window width with stored hubWidth
   const w = Math.min(720, Math.max(260, data.hubWidth ?? 440))
   try {
     const [, h] = overlayWindow.getContentSize()
@@ -466,8 +471,9 @@ ipcMain.on('session:start', (_, data) => {
   } catch { try { overlayWindow.setContentSize(w, 600) } catch {} }
   writeConfig({ ...readConfig(), hubWidth: w })
 
-  // Hide main window, show overlay
+  // Hide main window
   mainWindow?.hide()
+
   if (overlayReady) {
     overlayWindow.webContents.send('session:init', data)
   } else {
@@ -486,9 +492,16 @@ ipcMain.on('session:stop', () => {
   // Stop cursor polling
   if (hoverInterval) { clearInterval(hoverInterval); hoverInterval = null }
   overlayWindow?.hide()
+  // Notify main window: overlay is stopping (disable Start button)
+  mainWindow?.webContents.send('session:stop-status', 'stopping')
+  console.log('[Session] Stopping — main window notified')
+})
+
+ipcMain.on('session:stop-done', () => {
   mainWindow?.show()
   mainWindow?.focus()
-  console.log('[Session] Stopped — main window restored')
+  mainWindow?.webContents.send('session:stop-status', 'ready')
+  console.log('[Session] Stop complete — main window restored')
 })
 
 // Hover-to-activate: renderer tells us when mouse enters/leaves overlay

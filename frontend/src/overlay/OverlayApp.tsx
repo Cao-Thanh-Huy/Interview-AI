@@ -1,5 +1,7 @@
 import { useState, useCallback, useEffect, useRef, memo, CSSProperties } from 'react'
 import { useDeepgram } from '@/hooks/useDeepgram'
+import { useAudioCapture } from '@/hooks/useAudioCapture'
+import { SessionManager, type SessionState } from '@/lib/SessionManager'
 import { streamCompletion, completeOnce, translateText, practiceTurn, getLastTranslateModel, fetchTTSAudio } from '@/lib/api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -29,6 +31,7 @@ declare global {
       resizeHeight:   (h: number) => void
       dragStart:      () => void
       dragEnd:        () => void
+      stopComplete?:  () => void
       onWindowResized?: (cb: (w: number) => void) => () => void
     }
     electronAudio?: {
@@ -194,7 +197,25 @@ export function OverlayApp() {
   const [showScrollButton, setShowScrollButton] = useState(false)
   const turnVersionRef = useRef<Record<string, number>>({}) // per-turn revision counter
 
+  // ── Session management refs (giữ sessionId qua các lần restart) ─────────────
+  const sessionIdRef = useRef({ live: '', practice: '' })
+  const sessionDataRef = useRef<SessionData | null>(null)
+  const manualStopRef = useRef(false) // guard chống double-stop từ cleanup
+
+  // ── Generation ID: chống stale completion ─────────────────────────────────
+  const generationIdRef = useRef(0)
+
+  // ── Audio capture (persistent) ──────────────────────────────────────────
+  const { stream, audioLevel } = useAudioCapture()
+  // useDeepgram moved below (cần handleTranscript/handleUtteranceEnd defined trước)
+
+  // ── SessionManager: state machine ─────────────────────────────────────────
+  const sessionManagerRef = useRef(new SessionManager())
+  const [sessionState, setSessionState] = useState<SessionState>('idle')
+  useEffect(() => sessionManagerRef.current.onStateChange(setSessionState), [])
+
   // Keep refs in sync
+  sessionDataRef.current = sessionData  // sync mỗi render — dùng trong callbacks stable
   useEffect(() => { hubWidthRef.current  = hubWidth  }, [hubWidth])
   useEffect(() => { hubHeightRef.current = hubHeight }, [hubHeight])
   turnsRef.current = turns  // sync every render (no deps — runs every render)
@@ -256,14 +277,21 @@ export function OverlayApp() {
       .catch(() => {})
   }, [])
 
-  // ── Transcript handler — update turn question real-time + isFinal => LLM -----
+  // ── Transcript handler — STABLE callback (đọc sessionData từ ref) ─────────
   const handleTranscript = useCallback((text: string, isFinal?: boolean) => {
     if (!text.trim()) return
+    if (!sessionDataRef.current) {
+      console.log('[Transcript] blocked: sessionDataRef null, activeTurnId=', activeTurnId.current, 'isFinal=', isFinal)
+      return  // session stopped, ignore
+    }
+
+    const sid = sessionIdRef.current.live
+    const ctx = sessionDataRef.current.context ?? ''
+    if (isFinal) console.log('[Transcript] isFinal activeTurnId=', activeTurnId.current, 'sid=', sid)
 
     // Luôn tạo/cập nhật turn — không return sớm (fix interim bug)
     let id = activeTurnId.current
     if (!id) {
-      // Clean up version counters for turns no longer in display (keep max 20)
       const activeIds = new Set(turnsRef.current.slice(-20).map(t => t.id))
       Object.keys(turnVersionRef.current).forEach(k => {
         if (!activeIds.has(k)) delete turnVersionRef.current[k]
@@ -284,20 +312,19 @@ export function OverlayApp() {
     }
 
     if (isFinal) {
+      const genId = ++generationIdRef.current
+      const myVersion = (turnVersionRef.current[id] ?? 0) + 1
+      turnVersionRef.current[id] = myVersion
+      const staleCheck = () => turnVersionRef.current[id] !== myVersion || generationIdRef.current !== genId
+
       // Translate the FINAL full question
       translateText(text)
         .then((vn) => {
+          if (staleCheck()) return
           setActiveModels(prev => ({ ...prev, translate: getLastTranslateModel() }))
           setTurns(prev => prev.map(t => t.id === id ? { ...t, questionTranslation: vn } : t))
         })
         .catch(() => {})
-
-      const ctx = sessionData?.context ?? ''
-      const sid = sessionData?.sessionId
-      // Per-turn version: increment every isFinal, used for stale check
-      const myVersion = (turnVersionRef.current[id] ?? 0) + 1
-      turnVersionRef.current[id] = myVersion
-            const staleCheck = () => turnVersionRef.current[id] !== myVersion
 
       // Abort previous completion dể tránh connection storm + rate limit
       abortRef.current?.abort()
@@ -354,7 +381,7 @@ export function OverlayApp() {
           })
       }
     }
-  }, [sessionData, addTurn, updateTurnQuestion, appendBullet])
+  }, [addTurn, updateTurnQuestion, appendBullet]) // STABLE — không phụ thuộc sessionData
 
   // ── UtteranceEnd → create turn + stream AI response ───────────────────────
   const handleUtteranceEnd = useCallback((fullText: string) => {
@@ -367,6 +394,22 @@ export function OverlayApp() {
 
     activeTurnId.current = null
   }, [finalizeTurn])
+
+  // ── Deepgram (per session) — phải đặt sau handleTranscript/handleUtteranceEnd ──
+  const { start, stop, status, closeWasClean } = useDeepgram({
+    stream,
+    onTranscript:   handleTranscript,
+    onUtteranceEnd: handleUtteranceEnd,
+    onStatusChange: (s) => {
+      if (s === 'connected') sessionManagerRef.current.transition({ type: 'LISTENING' })
+      else if (s === 'error') sessionManagerRef.current.transition({ type: 'ERROR', message: '' })
+    },
+    onError:        (e) => console.error('[Overlay]', e),
+  })
+
+  // keep ref fresh for reconnect effect
+  const startRef = useRef(start)
+  startRef.current = start
 
   // ── Manual question input — type a question, get AI suggestion ──────────────
   //     Non-streaming, không gửi sessionId → backend skip persist + summary.
@@ -396,7 +439,7 @@ export function OverlayApp() {
 
     try {
       // Non-streaming: gửi sessionId để lưu vào history
-      const answer = await completeOnce(text, ctx, 'copilot', sessionData?.sessionId, [])
+      const answer = await completeOnce(text, ctx, 'copilot', sessionIdRef.current.live, [])
       if (answer) {
         // Parse answer thành bullets, set atomic 1 lần
         const bullets = answer
@@ -538,37 +581,30 @@ export function OverlayApp() {
     }
   }, [practicePrompt, practiceContext, practiceSessionId, appendBullet])
 
-  // ── Deepgram ───────────────────────────────────────────────────────────────
-  const { start, stop, status, audioLevel } = useDeepgram({
-    onTranscript:   handleTranscript,
-    onUtteranceEnd: handleUtteranceEnd,
-    onStatusChange: () => {},
-    onError:        (e) => console.error('[Overlay]', e),
-  })
-
-  // keep ref fresh for reconnect effect (useRef tru?c khi dùng trong effect ?? tránh stale closure)
-  const startRef = useRef(start)
-  startRef.current = start
-
-  // ── IPC: session init ──────────────────────────────────────────────────────
+  // ── IPC: session init (VIẾT LẠI — giữ sessionId qua restart) ──────────────
   useEffect(() => {
     if (window.electronOverlay) {
       const cleanup = window.electronOverlay.onInit((data: SessionData) => {
-        setSessionData(data)
-        setIsActive(true)
         if (data.mode === 'practice') {
+          sessionIdRef.current.practice ||= data.sessionId || ''
+          console.log('[Session] onInit practice sid=', sessionIdRef.current.practice)
+          setPracticeSessionId(sessionIdRef.current.practice)
           setMode('practice')
           setPracticePrompt(data.prompt || '')
           setPracticeContext(data.context || '')
-          setPracticeSessionId(data.sessionId || '')
-          setTurns([])  // Reset turns for new practice session
+          setTurns([])
           setPracticeStarted(false)
         } else {
+          const prevLiveId = sessionIdRef.current.live
+          // Luôn cập nhật sessionId mới từ backend (session mới = sessionId mới)
+          sessionIdRef.current.live = data.sessionId || sessionIdRef.current.live
+          const sid = sessionIdRef.current.live
+          console.log('[Session] onInit live prevLiveId=', prevLiveId, 'ipcSessionId=', data.sessionId, 'finalSid=', sid, 'isNew=', prevLiveId !== sid)
+          setSessionData({ ...data, sessionId: sid })
           setMode('live')
-          setTurns([])
-          setManualInput('')
-          setManualError('')
+          // KHÔNG clear turns — giữ lại qua restart
         }
+        setIsActive(true)
       })
       return cleanup
     } else {
@@ -579,16 +615,35 @@ export function OverlayApp() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!sessionData) return
-    if (mode === 'practice') return  // Practice uses its own turn trigger
-    start()
-    return () => stop()
-  }, [sessionData, mode]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!sessionData) {
+      console.log('[Session] auto-start SKIP — no sessionData')
+      return
+    }
+    if (mode === 'practice') {
+      console.log('[Session] auto-start SKIP — practice mode')
+      return  // Practice uses its own turn trigger
+    }
+    console.log('[Session] auto-start sessionId=', sessionData.sessionId, 'sessionDataRef=', sessionDataRef.current === sessionData)
+    sessionManagerRef.current.transition({ type: 'INIT' })
+    isStartingRef.current = true
+    start().finally(() => { isStartingRef.current = false })
+    return () => {
+      console.log('[Session] auto-start CLEANUP')
+      isStartingRef.current = false
+      if (!manualStopRef.current) stop()
+    }
+  }, [sessionData, stream, mode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Auto-reconnect với exponential backoff + max retries ─────────────────
   const reconnectAttemptsRef = useRef(0)
   const MAX_RECONNECT_ATTEMPTS = 8
+  const isStartingRef = useRef(false)  // ngăn reconnect effect chạy khi auto-start đang chạy
   useEffect(() => {
+    if (manualStopRef.current) return
+    if (isStartingRef.current) return
+    // Nếu WS đóng sạch ko transcript → audio im lặng → reconnect vô ích
+    if (closeWasClean) return
+
     if ((status === 'idle' || status === 'error') && sessionData && mode !== 'practice') {
       if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
         console.log(`[Overlay] Max reconnect (${MAX_RECONNECT_ATTEMPTS}) reached, giving up`)
@@ -605,7 +660,7 @@ export function OverlayApp() {
         console.log('[Overlay] Connected — reset retry counter')
       }
     }
-  }, [status, sessionData, mode])
+  }, [status, sessionData, mode, closeWasClean])
 
   // ── Practice: trigger first turn once ──────────────────────────────────────
   useEffect(() => {
@@ -653,22 +708,36 @@ export function OverlayApp() {
     return cleanup
   }, [])
 
-  // ── Stop ───────────────────────────────────────────────────────────────────
+  // ── Stop — clear sessionId, reset refs & state ────────────────────────────
   const handleStop = useCallback(() => {
+    console.log('[Session] handleStop start liveSid=', sessionIdRef.current.live, 'activeTurnId=', activeTurnId.current, 'mode=', mode)
+    manualStopRef.current = true
+    sessionManagerRef.current.transition({ type: 'STOP' })
     abortRef.current?.abort()
     stop()
+    // Reset refs
+    activeTurnId.current = null
+    turnVersionRef.current = {}
+    lastTranscriptRef.current = 0
+    // Finalize các turn đang generating (tránh spinner treo)
+    setTurns(prev => prev.map(t => t.isGenerating ? { ...t, isGenerating: false } : t))
     window.electronOverlay?.stop()
     setSessionData(null)
     setIsActive(false)
-    setTurns([])
     setManualInput('')
     setManualError('')
     if (mode === 'practice') {
       setPracticeStarted(false)
       setPracticeError('')
       setPracticeContext('')
-      setPracticeSessionId('')
     }
+    // Clear sessionId để lần start sau nhận được sessionId mới từ backend
+    sessionIdRef.current.live = ''
+    console.log('[Session] handleStop done — liveSid cleared')
+    // Notify main process that stop is complete
+    window.electronOverlay?.stopComplete?.()
+    // Reset guard để lần start sau có thể auto-start
+    manualStopRef.current = false
   }, [stop, mode])
 
   // ── Font size buttons ──────────────────────────────────────────────────────

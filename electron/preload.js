@@ -36,6 +36,11 @@ contextBridge.exposeInMainWorld('electronAudio', {
 // Session lifecycle — used by MAIN WINDOW to start/stop interview session
 contextBridge.exposeInMainWorld('electronSession', {
   start: (data) => ipcRenderer.send('session:start', data),
+  onStopStatus: (cb) => {
+    const handler = (_, status) => cb(status)
+    ipcRenderer.on('session:stop-status', handler)
+    return () => ipcRenderer.removeListener('session:stop-status', handler)
+  },
 })
 
 // Overlay controls — used by OVERLAY WINDOW
@@ -48,6 +53,8 @@ contextBridge.exposeInMainWorld('electronOverlay', {
   },
   // Tell main process to show main window + hide overlay
   stop: () => ipcRenderer.send('session:stop'),
+  // Notify main process that overlay has fully stopped (audio released)
+  stopComplete: () => ipcRenderer.send('session:stop-done'),
   // Toggle click-through (hover-to-activate)
   setInteractive: (interactive) => ipcRenderer.send('overlay:interactive', interactive),
   // Resize overlay window width / height
