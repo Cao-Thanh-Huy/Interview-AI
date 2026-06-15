@@ -19,6 +19,7 @@ export interface TurnEntry {
   question: string
   answer: string
   timestamp: string
+  turnId?: string       // overlay turn ID — dùng để dedup (replace nếu cùng turn)
 }
 
 function sessionDir(sessionId: string): string {
@@ -45,6 +46,31 @@ export function ensureSession(sessionId: string, context: string, type?: 'live' 
 export function appendTurn(sessionId: string, context: string, turn: TurnEntry, type?: 'live' | 'practice'): void {
   ensureSession(sessionId, context, type)
   const file = path.join(sessionDir(sessionId), 'turns.jsonl')
+
+  // Dedup: nếu turn cuối có cùng turnId trong 60s → REPLACE (isFinal #1 → #2+ refinement)
+  // Nếu không có turnId nhưng cùng question text → cũng replace (safety net)
+  try {
+    if (fs.existsSync(file)) {
+      const lines = fs.readFileSync(file, 'utf-8').split('\n').filter(Boolean)
+      if (lines.length > 0) {
+        const lastTurn = JSON.parse(lines[lines.length - 1]) as TurnEntry
+        const timeDiff = new Date(turn.timestamp).getTime() - new Date(lastTurn.timestamp).getTime()
+        if (timeDiff < 60000) {
+          const sameTurn = turn.turnId && lastTurn.turnId === turn.turnId
+          const sameQuestion = !turn.turnId && lastTurn.question === turn.question
+          if (sameTurn || sameQuestion) {
+            lines[lines.length - 1] = JSON.stringify(turn)
+            fs.writeFileSync(file, lines.join('\n') + '\n', 'utf-8')
+            console.log(`[historyStore] Replaced turn: "${turn.question.slice(0, 40)}..."`)
+            return
+          }
+        }
+      }
+    }
+  } catch {
+    // Non-fatal — nếu read file lỗi thì vẫn append bình thường
+  }
+
   fs.appendFileSync(file, JSON.stringify(turn) + '\n', 'utf-8')
 }
 
@@ -118,5 +144,41 @@ export function getSessionMeta(sessionId: string): SessionMetadata | null {
     return JSON.parse(fs.readFileSync(metaFile, 'utf-8')) as SessionMetadata
   } catch {
     return null
+  }
+}
+
+/**
+ * Delete a single session directory (metadata + turns).
+ */
+export function deleteSession(sessionId: string): boolean {
+  const dir = sessionDir(sessionId)
+  if (!fs.existsSync(dir)) return false
+  try {
+    fs.rmSync(dir, { recursive: true, force: true })
+    console.log(`[historyStore] Deleted session: ${sessionId}`)
+    return true
+  } catch (err) {
+    console.error(`[historyStore] Failed to delete session ${sessionId}:`, err)
+    return false
+  }
+}
+
+/**
+ * Delete ALL session directories.
+ */
+export function clearAllSessions(): boolean {
+  if (!fs.existsSync(HISTORY_BASE)) return true
+  try {
+    const dirs = fs.readdirSync(HISTORY_BASE).filter((d) => {
+      try { return fs.statSync(path.join(HISTORY_BASE, d)).isDirectory() } catch { return false }
+    })
+    for (const d of dirs) {
+      fs.rmSync(path.join(HISTORY_BASE, d), { recursive: true, force: true })
+    }
+    console.log(`[historyStore] Cleared all sessions (${dirs.length} dirs)`)
+    return true
+  } catch (err) {
+    console.error(`[historyStore] Failed to clear all sessions:`, err)
+    return false
   }
 }

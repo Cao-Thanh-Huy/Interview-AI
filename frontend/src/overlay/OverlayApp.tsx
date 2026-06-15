@@ -350,6 +350,7 @@ export function OverlayApp() {
           controller.signal, // Abort nếu có isFinal mới hon
           sid,
           [],
+          id,   // turnId — để backend replace (không append) nếu isFinal #2+ update
         )
         .then(() => {
           if (staleCheck()) return
@@ -362,7 +363,8 @@ export function OverlayApp() {
         })
       } else {
         // ── isFinal #2+: NON-STREAMING, atomic replace ──
-        completeOnce(text, ctx, 'copilot', sid, [], controller.signal)
+        // Gửi sessionId + turnId → backend REPLACE turn cũ (không append)
+        completeOnce(text, ctx, 'copilot', sid, [], controller.signal, id)
           .then((fullAnswer) => {
             if (staleCheck()) return
 
@@ -438,8 +440,8 @@ export function OverlayApp() {
     const ctx = sessionData?.context ?? ''
 
     try {
-      // Non-streaming: gửi sessionId để lưu vào history
-      const answer = await completeOnce(text, ctx, 'copilot', sessionIdRef.current.live, [])
+      // Non-streaming: gửi sessionId + turnId để lưu vào history
+      const answer = await completeOnce(text, ctx, 'copilot', sessionIdRef.current.live, [], undefined, manualId)
       if (answer) {
         // Parse answer thành bullets, set atomic 1 lần
         const bullets = answer
@@ -596,8 +598,11 @@ export function OverlayApp() {
           setPracticeStarted(false)
         } else {
           const prevLiveId = sessionIdRef.current.live
-          // Luôn cập nhật sessionId mới từ backend (session mới = sessionId mới)
-          sessionIdRef.current.live = data.sessionId || sessionIdRef.current.live
+          // Giữ sessionId qua restart (start→stop→start = cùng 1 session)
+          // Chỉ lấy sessionId mới nếu chưa có (lần start đầu tiên)
+          if (!sessionIdRef.current.live) {
+            sessionIdRef.current.live = data.sessionId || sessionIdRef.current.live
+          }
           const sid = sessionIdRef.current.live
           console.log('[Session] onInit live prevLiveId=', prevLiveId, 'ipcSessionId=', data.sessionId, 'finalSid=', sid, 'isNew=', prevLiveId !== sid)
           setSessionData({ ...data, sessionId: sid })
@@ -731,8 +736,9 @@ export function OverlayApp() {
       setPracticeError('')
       setPracticeContext('')
     }
-    // Clear sessionId để lần start sau nhận được sessionId mới từ backend
-    sessionIdRef.current.live = ''
+    // Giữ sessionId qua restart — KHÔNG clear ở đây
+    // Nếu user muốn session mới, cần "New Session" button riêng
+    // sessionIdRef.current.live = ''
     console.log('[Session] handleStop done — liveSid cleared')
     // Notify main process that stop is complete
     window.electronOverlay?.stopComplete?.()

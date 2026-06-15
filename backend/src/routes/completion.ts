@@ -167,7 +167,7 @@ completionRouter.post('/', async (c) => {
   const rawTranscript = typeof body.transcript === 'string'
     ? body.transcript
     : String(body.transcript ?? '')
-  const { context = '', sessionId, mode = 'copilot', stream: shouldStream = true } = body
+  const { context = '', sessionId, mode = 'copilot', stream: shouldStream = true, turnId: overlayTurnId } = body
 
   if (!rawTranscript.trim()) {
     return c.json({ error: 'transcript is required' }, 400)
@@ -278,6 +278,7 @@ Only output the score block above — no intro, no commentary.`
           question: rawTranscript,
           answer: fullAnswer,
           timestamp: new Date().toISOString(),
+          turnId: overlayTurnId,  // overlay turn ID → backend replace nếu cùng turn
         })
       } catch (err) {
         console.error('historyStore appendTurn failed:', err)
@@ -321,6 +322,7 @@ Only output the score block above — no intro, no commentary.`
           question: transcript,
           answer: fullAnswer,
           timestamp: new Date().toISOString(),
+          turnId: overlayTurnId,  // overlay turn ID → backend replace nếu cùng turn
         })
       } catch (err) {
         console.error('historyStore appendTurn failed:', err)

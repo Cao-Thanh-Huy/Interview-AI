@@ -26,11 +26,12 @@ export async function streamCompletion(
   signal?: AbortSignal,
   sessionId?: string,
   history?: HistoryTurn[],
+  turnId?: string,
 ): Promise<void> {
   const res = await fetch(`${BASE}/completion`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ transcript, context, mode, sessionId, history }),
+    body: JSON.stringify({ transcript, context, mode, sessionId, history, turnId }),
     signal,
   })
 
@@ -61,11 +62,12 @@ export async function completeOnce(
   sessionId?: string,
   history?: HistoryTurn[],
   signal?: AbortSignal,
+  turnId?: string,
 ): Promise<string> {
   const res = await fetch(`${BASE}/completion`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ transcript, context, mode, stream: false, sessionId, history }),
+    body: JSON.stringify({ transcript, context, mode, stream: false, sessionId, history, turnId }),
     signal,
   })
 
@@ -104,6 +106,16 @@ export async function getHistorySession(sessionId: string): Promise<SessionDetai
   const res = await fetch(`${BASE}/history/${encodeURIComponent(sessionId)}`)
   if (!res.ok) throw new Error('Failed to load session')
   return res.json()
+}
+
+export async function deleteHistorySession(sessionId: string): Promise<void> {
+  const res = await fetch(`${BASE}/history/${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Failed to delete session')
+}
+
+export async function clearAllHistory(): Promise<void> {
+  const res = await fetch(`${BASE}/history`, { method: 'DELETE' })
+  if (!res.ok) throw new Error('Failed to clear history')
 }
 
 /**
