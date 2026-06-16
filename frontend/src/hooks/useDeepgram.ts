@@ -135,7 +135,7 @@ export function useDeepgram({
 
       // Biến ở scope openWebSocket — các handler đều truy cập được
       let gotTranscript = false
-      let transcriptTimer: ReturnType<typeof setTimeout> | null = null
+      let transcriptTimer: ReturnType<typeof setTimeout> | undefined
 
       ws.onopen = () => {
         console.log('[Deepgram] WebSocket opened ✅ — readyState:', ws.readyState)
